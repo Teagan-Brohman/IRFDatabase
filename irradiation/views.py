@@ -2,7 +2,9 @@ from django.shortcuts import render, get_object_or_404
 from django.views.generic import ListView, DetailView, CreateView, UpdateView
 from django.db.models import Q, Count
 from django.urls import reverse_lazy
+from django.http import JsonResponse
 from .models import IrradiationRequestForm, SampleIrradiationLog
+from .forms import IRFForm, SampleLogForm
 
 
 class IRFListView(ListView):
@@ -78,10 +80,16 @@ class IRFDetailView(DetailView):
     context_object_name = 'irf'
 
     def get_context_data(self, **kwargs):
-        """Add sample logs to context"""
+        """Add sample logs and version history to context"""
         context = super().get_context_data(**kwargs)
         context['sample_logs'] = self.object.irradiation_logs.all().order_by('-irradiation_date')
         context['active_tab'] = self.request.GET.get('tab', 'details')
+
+        # Add version history
+        context['version_history'] = self.object.get_version_history()
+        context['has_amendments'] = self.object.has_amendments()
+        context['is_latest_version'] = self.object.is_latest_version()
+
         return context
 
 
@@ -89,15 +97,7 @@ class IRFCreateView(CreateView):
     """Create new IRF"""
     model = IrradiationRequestForm
     template_name = 'irradiation/irf_form.html'
-    fields = [
-        'irf_number', 'sample_description', 'physical_form', 'physical_form_other',
-        'encapsulation', 'encapsulation_other', 'irradiation_location',
-        'irradiation_location_other', 'max_power', 'max_time', 'max_mass',
-        'expected_dose_rate', 'dose_rate_basis', 'dose_rate_reference_irf',
-        'dose_rate_calculation_notes', 'reactivity_worth', 'reactivity_basis',
-        'reactivity_reference_irf', 'request_comments', 'requester_name',
-        'requester_signature_date'
-    ]
+    form_class = IRFForm
     success_url = reverse_lazy('irradiation:irf_list')
 
 
@@ -105,7 +105,34 @@ class IRFUpdateView(UpdateView):
     """Update existing IRF"""
     model = IrradiationRequestForm
     template_name = 'irradiation/irf_form.html'
-    fields = '__all__'
+    form_class = IRFForm
+
+    def form_valid(self, form):
+        """Handle amendment vs fix logic"""
+        change_type = self.request.POST.get('change_type', 'fix')
+        change_notes = self.request.POST.get('change_notes', '')
+
+        if change_type == 'amendment':
+            # Create a new version (amendment)
+            old_irf = self.object
+            new_irf = form.save(commit=False)
+            new_irf.pk = None  # Create new object
+            new_irf.parent_version = old_irf
+            new_irf.version_number = old_irf.version_number + 1
+            new_irf.change_type = 'amendment'
+            new_irf.change_notes = change_notes
+            new_irf.save()
+
+            # Update the M2M relationships if any
+            form.save_m2m()
+
+            self.object = new_irf
+            return super(UpdateView, self).form_valid(form)
+        else:
+            # Just a fix, update in place
+            self.object.change_type = 'fix' if self.object.version_number > 1 else 'original'
+            self.object.change_notes = change_notes
+            return super().form_valid(form)
 
     def get_success_url(self):
         return reverse_lazy('irradiation:irf_detail', kwargs={'pk': self.object.pk})
@@ -115,12 +142,7 @@ class SampleLogCreateView(CreateView):
     """Create new sample irradiation log"""
     model = SampleIrradiationLog
     template_name = 'irradiation/sample_log_form.html'
-    fields = [
-        'irf', 'irradiation_date', 'sample_id', 'experimenter_name',
-        'actual_location', 'actual_power', 'time_in', 'time_out',
-        'total_time', 'measured_dose_rate', 'decay_time', 'operator_initials',
-        'notes'
-    ]
+    form_class = SampleLogForm
 
     def get_initial(self):
         """Pre-fill IRF if provided in URL"""
@@ -157,3 +179,30 @@ def home(request):
     }
 
     return render(request, 'irradiation/home.html', context)
+
+
+def irf_autocomplete(request):
+    """
+    API endpoint for IRF number autocomplete
+    Returns matching IRF numbers and basic info
+    """
+    query = request.GET.get('q', '').strip()
+
+    if len(query) < 2:
+        return JsonResponse({'results': []})
+
+    irfs = IrradiationRequestForm.objects.filter(
+        irf_number__icontains=query
+    )[:10]
+
+    results = [
+        {
+            'irf_number': irf.irf_number,
+            'sample_description': irf.sample_description[:50],
+            'status': irf.get_status_display(),
+            'url': irf.get_absolute_url(),
+        }
+        for irf in irfs
+    ]
+
+    return JsonResponse({'results': results})

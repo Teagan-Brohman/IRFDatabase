@@ -18,6 +18,35 @@ class IrradiationRequestForm(models.Model):
     created_date = models.DateField(auto_now_add=True)
     updated_date = models.DateField(auto_now=True)
 
+    # Version/Amendment Tracking
+    version_number = models.IntegerField(
+        default=1,
+        help_text="Version number for this IRF (1, 2, 3, etc.)"
+    )
+    parent_version = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='amendments',
+        help_text="Previous version if this is an amendment"
+    )
+    CHANGE_TYPE_CHOICES = [
+        ('original', 'Original'),
+        ('fix', 'Minor Fix/Correction'),
+        ('amendment', 'Amendment'),
+    ]
+    change_type = models.CharField(
+        max_length=20,
+        choices=CHANGE_TYPE_CHOICES,
+        default='original',
+        help_text="Type of change from previous version"
+    )
+    change_notes = models.TextField(
+        blank=True,
+        help_text="Notes about what changed in this version"
+    )
+
     # 1. IRRADIATION REQUEST SECTION (Completed by Experimenter)
 
     # a. Sample Description
@@ -83,23 +112,55 @@ class IrradiationRequestForm(models.Model):
     )
 
     # e. Irradiation Limits
+    POWER_UNIT_CHOICES = [
+        ('kw', 'kW (kilowatts)'),
+        ('mw', 'mW (milliwatts)'),
+        ('w', 'W (watts)'),
+    ]
     max_power = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(0)],
-        help_text="Maximum reactor power (kW) for irradiation"
+        help_text="Maximum reactor power for irradiation"
     )
+    max_power_unit = models.CharField(
+        max_length=10,
+        choices=POWER_UNIT_CHOICES,
+        default='kw'
+    )
+
+    TIME_UNIT_CHOICES = [
+        ('min', 'minutes'),
+        ('hr', 'hours'),
+        ('sec', 'seconds'),
+    ]
     max_time = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(0)],
-        help_text="Irradiation time (minutes) at maximum power"
+        help_text="Irradiation time at maximum power"
     )
+    max_time_unit = models.CharField(
+        max_length=10,
+        choices=TIME_UNIT_CHOICES,
+        default='min'
+    )
+
+    MASS_UNIT_CHOICES = [
+        ('g', 'grams (g)'),
+        ('kg', 'kilograms (kg)'),
+        ('mg', 'milligrams (mg)'),
+    ]
     max_mass = models.DecimalField(
         max_digits=10,
         decimal_places=3,
         validators=[MinValueValidator(0)],
-        help_text="Maximum sample mass (grams) to be irradiated in single irradiation"
+        help_text="Maximum sample mass to be irradiated in single irradiation"
+    )
+    max_mass_unit = models.CharField(
+        max_length=10,
+        choices=MASS_UNIT_CHOICES,
+        default='g'
     )
 
     # f. Expected Dose Rate
@@ -153,6 +214,12 @@ class IrradiationRequestForm(models.Model):
         max_length=20,
         blank=True,
         help_text="Reference IRF number if based on experience"
+    )
+    sop306_calculation_file = models.FileField(
+        upload_to='sop306_calculations/',
+        blank=True,
+        null=True,
+        help_text="Upload SOP 306 calculation file (PDF, Excel, etc.)"
     )
 
     # h. Comments
@@ -275,6 +342,37 @@ class IrradiationRequestForm(models.Model):
     def total_irradiations(self):
         """Count total irradiations performed under this IRF"""
         return self.irradiation_logs.count()
+
+    def has_amendments(self):
+        """Check if this IRF has any amendments"""
+        return self.amendments.exists()
+
+    def get_version_history(self):
+        """Get all versions of this IRF in chronological order"""
+        # Start with this version
+        current = self
+        # Go back to find the original
+        while current.parent_version:
+            current = current.parent_version
+        # Now get all amendments forward from original
+        versions = [current]
+        self._collect_amendments(current, versions)
+        return versions
+
+    def _collect_amendments(self, irf, versions):
+        """Recursively collect all amendments"""
+        for amendment in irf.amendments.all().order_by('created_date'):
+            versions.append(amendment)
+            self._collect_amendments(amendment, versions)
+
+    def get_latest_version(self):
+        """Get the latest version in the amendment chain"""
+        versions = self.get_version_history()
+        return versions[-1] if versions else self
+
+    def is_latest_version(self):
+        """Check if this is the latest version"""
+        return not self.has_amendments()
 
 
 class SampleIrradiationLog(models.Model):
