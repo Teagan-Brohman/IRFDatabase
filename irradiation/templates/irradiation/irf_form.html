@@ -8,65 +8,358 @@
         <div class="col-lg-10">
             <h2 class="mb-4">
                 <i class="bi bi-file-earmark-text"></i>
-                {% if object %}Edit IRF {{ object.irf_number }}{% else %}Create New IRF{% endif %}
+                {% if object %}Edit IRF {{ object.irf_number }}{% else %}Create New Irradiation Request Form{% endif %}
             </h2>
 
-            <div class="card">
-                <div class="card-body">
-                    <form method="post">
-                        {% csrf_token %}
+            <form method="post" enctype="multipart/form-data" id="irfForm">
+                {% csrf_token %}
 
-                        {% if form.non_field_errors %}
-                            <div class="alert alert-danger">
-                                {{ form.non_field_errors }}
+                {% if form.non_field_errors %}
+                    <div class="alert alert-danger">
+                        {{ form.non_field_errors }}
+                    </div>
+                {% endif %}
+
+                <!-- SECTION 1: IRRADIATION REQUEST -->
+                <div class="card mb-4 section-card">
+                    <div class="card-header bg-primary text-white">
+                        <h4 class="mb-0">
+                            <i class="bi bi-1-circle-fill"></i> Section 1: Irradiation Request
+                        </h4>
+                        <small>Completed by Experimenter</small>
+                    </div>
+                    <div class="card-body">
+                        <!-- IRF Number -->
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <label for="id_irf_number" class="form-label fw-bold">
+                                    IRF Number <span class="text-danger">*</span>
+                                </label>
+                                {{ form.irf_number }}
+                                <small class="form-text text-muted d-block">{{ form.irf_number.help_text }}</small>
                             </div>
-                        {% endif %}
+                            <div class="col-md-6">
+                                <label for="id_status" class="form-label fw-bold">Status</label>
+                                {{ form.status }}
+                            </div>
+                        </div>
 
-                        <div class="row">
-                            {% for field in form %}
-                                <div class="col-md-6 mb-3">
-                                    <label for="{{ field.id_for_label }}" class="form-label">
-                                        {{ field.label }}
-                                        {% if field.field.required %}
-                                            <span class="text-danger">*</span>
-                                        {% endif %}
-                                    </label>
+                        <!-- Sample Description -->
+                        <div class="mb-4">
+                            <label for="id_sample_description" class="form-label fw-bold">
+                                Sample Description <span class="text-danger">*</span>
+                            </label>
+                            {{ form.sample_description }}
+                            <small class="form-text text-muted d-block">{{ form.sample_description.help_text }}</small>
+                        </div>
 
-                                    {{ field }}
+                        <!-- Physical Form -->
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <label for="id_physical_form" class="form-label fw-bold">
+                                    Physical Form <span class="text-danger">*</span>
+                                </label>
+                                {{ form.physical_form }}
+                            </div>
+                            <div class="col-md-6" id="physical_form_other_container" style="display:none;">
+                                <label for="id_physical_form_other" class="form-label fw-bold">
+                                    Specify Other Physical Form
+                                </label>
+                                {{ form.physical_form_other }}
+                            </div>
+                        </div>
 
-                                    {% if field.help_text %}
-                                        <small class="form-text text-muted d-block">{{ field.help_text|safe }}</small>
-                                    {% endif %}
+                        <!-- Encapsulation -->
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <label for="id_encapsulation" class="form-label fw-bold">
+                                    Encapsulation <span class="text-danger">*</span>
+                                </label>
+                                {{ form.encapsulation }}
+                            </div>
+                            <div class="col-md-6" id="encapsulation_other_container" style="display:none;">
+                                <label for="id_encapsulation_other" class="form-label fw-bold">
+                                    Specify Other Encapsulation
+                                </label>
+                                {{ form.encapsulation_other }}
+                            </div>
+                        </div>
 
-                                    {% if field.errors %}
-                                        <div class="text-danger small mt-1">
-                                            {{ field.errors }}
-                                        </div>
-                                    {% endif %}
+                        <!-- Irradiation Location -->
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">
+                                Irradiation Location(s) <span class="text-danger">*</span>
+                            </label>
+                            <small class="form-text text-muted d-block mb-2">Select one or more facilities. Multiple may be authorized on single IRF.</small>
+                            <div class="location-checkboxes">
+                                {{ form.irradiation_locations }}
+                            </div>
+                            <div class="form-check mt-2">
+                                {{ form.location_other }}
+                                <label class="form-check-label" for="id_location_other">
+                                    Other Location (specify below)
+                                </label>
+                            </div>
+                            <div id="location_other_container" class="mt-2" style="display:none;">
+                                <label for="id_irradiation_location_other" class="form-label fw-bold">
+                                    Describe Other Location
+                                </label>
+                                {{ form.irradiation_location_other }}
+                                <small class="form-text text-muted d-block">{{ form.irradiation_location_other.help_text }}</small>
+                            </div>
+                        </div>
+
+                        <!-- Irradiation Limits -->
+                        <h5 class="border-bottom pb-2 mb-3">Irradiation Limits</h5>
+                        <div class="row mb-3">
+                            <div class="col-md-4">
+                                <label for="id_max_power" class="form-label fw-bold">
+                                    Maximum Power <span class="text-danger">*</span>
+                                </label>
+                                <div class="input-group">
+                                    {{ form.max_power }}
+                                    {{ form.max_power_unit }}
                                 </div>
-                            {% endfor %}
+                                <small class="form-text text-muted d-block">{{ form.max_power.help_text }}</small>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="id_max_time" class="form-label fw-bold">
+                                    Maximum Time <span class="text-danger">*</span>
+                                </label>
+                                <div class="input-group">
+                                    {{ form.max_time }}
+                                    {{ form.max_time_unit }}
+                                </div>
+                                <small class="form-text text-muted d-block">{{ form.max_time.help_text }}</small>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="id_max_mass" class="form-label fw-bold">
+                                    Maximum Mass <span class="text-danger">*</span>
+                                </label>
+                                <div class="input-group">
+                                    {{ form.max_mass }}
+                                    {{ form.max_mass_unit }}
+                                </div>
+                                <small class="form-text text-muted d-block">{{ form.max_mass.help_text }}</small>
+                            </div>
                         </div>
 
-                        <div class="mt-4">
-                            <button type="submit" class="btn btn-primary">
-                                <i class="bi bi-save"></i> Save IRF
-                            </button>
-                            <a href="{% if object %}{% url 'irradiation:irf_detail' object.pk %}{% else %}{% url 'irradiation:irf_list' %}{% endif %}"
-                               class="btn btn-secondary">
-                                <i class="bi bi-x-circle"></i> Cancel
-                            </a>
+                        <!-- Expected Dose Rate -->
+                        <h5 class="border-bottom pb-2 mb-3 mt-4">Expected Dose Rate</h5>
+                        <div class="row mb-3">
+                            <div class="col-md-4">
+                                <label for="id_expected_dose_rate" class="form-label fw-bold">
+                                    Expected Dose Rate (mrem/hr @ 1 ft) <span class="text-danger">*</span>
+                                </label>
+                                {{ form.expected_dose_rate }}
+                            </div>
+                            <div class="col-md-4">
+                                <label for="id_dose_rate_basis" class="form-label fw-bold">
+                                    Basis <span class="text-danger">*</span>
+                                </label>
+                                {{ form.dose_rate_basis }}
+                            </div>
+                            <div class="col-md-4" id="dose_rate_ref_container">
+                                <label for="id_dose_rate_reference_irf" class="form-label fw-bold">
+                                    Reference IRF Number
+                                </label>
+                                <div class="autocomplete-wrapper">
+                                    {{ form.dose_rate_reference_irf }}
+                                    <div class="autocomplete-results" id="dose_rate_autocomplete"></div>
+                                </div>
+                                <small class="form-text text-muted d-block">{{ form.dose_rate_reference_irf.help_text }}</small>
+                            </div>
                         </div>
-                    </form>
+                        <div class="mb-3" id="dose_rate_calc_container">
+                            <label for="id_dose_rate_calculation_notes" class="form-label fw-bold">
+                                Calculation Notes
+                            </label>
+                            {{ form.dose_rate_calculation_notes }}
+                            <small class="form-text text-muted d-block">{{ form.dose_rate_calculation_notes.help_text }}</small>
+                        </div>
+
+                        <!-- Reactivity Worth -->
+                        <h5 class="border-bottom pb-2 mb-3 mt-4">Reactivity Worth</h5>
+                        <div class="row mb-3">
+                            <div class="col-md-4">
+                                <label for="id_reactivity_worth" class="form-label fw-bold">
+                                    Reactivity Worth (% Δk/k) <span class="text-danger">*</span>
+                                </label>
+                                {{ form.reactivity_worth }}
+                                <small class="form-text text-muted d-block">{{ form.reactivity_worth.help_text }}</small>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="id_reactivity_basis" class="form-label fw-bold">
+                                    Basis <span class="text-danger">*</span>
+                                </label>
+                                {{ form.reactivity_basis }}
+                            </div>
+                            <div class="col-md-4" id="reactivity_ref_container">
+                                <label for="id_reactivity_reference_irf" class="form-label fw-bold">
+                                    Reference IRF Number
+                                </label>
+                                <div class="autocomplete-wrapper">
+                                    {{ form.reactivity_reference_irf }}
+                                    <div class="autocomplete-results" id="reactivity_autocomplete"></div>
+                                </div>
+                                <small class="form-text text-muted d-block">{{ form.reactivity_reference_irf.help_text }}</small>
+                            </div>
+                        </div>
+                        <div class="mb-3" id="sop306_file_container">
+                            <label for="id_sop306_calculation_file" class="form-label fw-bold">
+                                SOP 306 Calculation File
+                            </label>
+                            {{ form.sop306_calculation_file }}
+                            <small class="form-text text-muted d-block">{{ form.sop306_calculation_file.help_text }}</small>
+                        </div>
+
+                        <!-- Request Comments & Requester -->
+                        <h5 class="border-bottom pb-2 mb-3 mt-4">Requester Information</h5>
+                        <div class="mb-3">
+                            <label for="id_request_comments" class="form-label fw-bold">
+                                Additional Comments
+                            </label>
+                            {{ form.request_comments }}
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="id_requester_name" class="form-label fw-bold">
+                                    Requester Name <span class="text-danger">*</span>
+                                </label>
+                                {{ form.requester_name }}
+                            </div>
+                            <div class="col-md-6">
+                                <label for="id_requester_signature_date" class="form-label fw-bold">
+                                    Signature Date
+                                </label>
+                                {{ form.requester_signature_date }}
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
 
-            <div class="alert alert-info mt-3">
-                <small>
-                    <i class="bi bi-info-circle"></i>
-                    Fields marked with <span class="text-danger">*</span> are required.
-                    Refer to SOP 702 for detailed instructions on completing each field.
-                </small>
-            </div>
+                <!-- SECTION 2: REVIEW AND APPROVAL -->
+                <div class="card mb-4 section-card">
+                    <div class="card-header bg-success text-white">
+                        <h4 class="mb-0">
+                            <i class="bi bi-2-circle-fill"></i> Section 2: Review and Approval
+                        </h4>
+                        <small>Completed by Reviewers (SRO, Manager, Director, or Health Physicist)</small>
+                    </div>
+                    <div class="card-body">
+                        <!-- Hazard Analysis -->
+                        <h5 class="border-bottom pb-2 mb-3">Hazard Analysis</h5>
+
+                        <!-- Reactivity Hazard -->
+                        <div class="row mb-3 hazard-row">
+                            <div class="col-md-3">
+                                <label for="id_reactivity_hazard" class="form-label fw-bold">Reactivity</label>
+                                {{ form.reactivity_hazard }}
+                            </div>
+                            <div class="col-md-9">
+                                <label for="id_reactivity_hazard_notes" class="form-label fw-bold">Notes (if Other)</label>
+                                {{ form.reactivity_hazard_notes }}
+                            </div>
+                        </div>
+
+                        <!-- Dose Rate Hazard -->
+                        <div class="row mb-3 hazard-row">
+                            <div class="col-md-3">
+                                <label for="id_dose_rate_hazard" class="form-label fw-bold">Dose Rate</label>
+                                {{ form.dose_rate_hazard }}
+                            </div>
+                            <div class="col-md-9">
+                                <label for="id_dose_rate_hazard_notes" class="form-label fw-bold">Notes (if Other)</label>
+                                {{ form.dose_rate_hazard_notes }}
+                            </div>
+                        </div>
+
+                        <!-- Reactor Equipment Hazard -->
+                        <div class="row mb-3 hazard-row">
+                            <div class="col-md-3">
+                                <label for="id_reactor_equipment_hazard" class="form-label fw-bold">Reactor Equipment</label>
+                                {{ form.reactor_equipment_hazard }}
+                            </div>
+                            <div class="col-md-9">
+                                <label for="id_reactor_equipment_hazard_notes" class="form-label fw-bold">Notes (if Other)</label>
+                                {{ form.reactor_equipment_hazard_notes }}
+                            </div>
+                        </div>
+
+                        <!-- Other Hazard -->
+                        <div class="row mb-3 hazard-row">
+                            <div class="col-md-3">
+                                <label for="id_other_hazard" class="form-label fw-bold">Other Hazards</label>
+                                {{ form.other_hazard }}
+                            </div>
+                            <div class="col-md-9">
+                                <label for="id_other_hazard_notes" class="form-label fw-bold">Notes (if Other)</label>
+                                {{ form.other_hazard_notes }}
+                            </div>
+                        </div>
+
+                        <!-- Additional Restrictions -->
+                        <div class="mb-4">
+                            <label for="id_additional_restrictions" class="form-label fw-bold">
+                                Additional Restrictions/Requirements
+                            </label>
+                            {{ form.additional_restrictions }}
+                        </div>
+
+                        <!-- Approvals -->
+                        <h5 class="border-bottom pb-2 mb-3">Approvals (Two Signatures Required)</h5>
+                        <div class="row mb-3">
+                            <div class="col-md-4">
+                                <label for="id_approver1_role" class="form-label fw-bold">Approver 1 Role</label>
+                                {{ form.approver1_role }}
+                            </div>
+                            <div class="col-md-4">
+                                <label for="id_approver1_name" class="form-label fw-bold">Name</label>
+                                {{ form.approver1_name }}
+                            </div>
+                            <div class="col-md-4">
+                                <label for="id_approver1_date" class="form-label fw-bold">Date</label>
+                                {{ form.approver1_date }}
+                            </div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-md-4">
+                                <label for="id_approver2_role" class="form-label fw-bold">Approver 2 Role</label>
+                                {{ form.approver2_role }}
+                            </div>
+                            <div class="col-md-4">
+                                <label for="id_approver2_name" class="form-label fw-bold">Name</label>
+                                {{ form.approver2_name }}
+                            </div>
+                            <div class="col-md-4">
+                                <label for="id_approver2_date" class="form-label fw-bold">Date</label>
+                                {{ form.approver2_date }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Form Actions -->
+                <div class="card mb-4">
+                    <div class="card-body text-center">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="bi bi-save"></i> Save IRF
+                        </button>
+                        <a href="{% if object %}{% url 'irradiation:irf_detail' object.pk %}{% else %}{% url 'irradiation:irf_list' %}{% endif %}"
+                           class="btn btn-secondary btn-lg">
+                            <i class="bi bi-x-circle"></i> Cancel
+                        </a>
+                    </div>
+                </div>
+
+                <div class="alert alert-info">
+                    <small>
+                        <i class="bi bi-info-circle"></i>
+                        Fields marked with <span class="text-danger">*</span> are required.
+                        Refer to SOP 702 for detailed instructions on completing each field.
+                    </small>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -74,11 +367,12 @@
 
 {% block extra_css %}
 <style>
-    /* Style all form inputs */
+    /* Form styling */
     input[type="text"],
     input[type="number"],
     input[type="date"],
     input[type="email"],
+    input[type="file"],
     textarea,
     select {
         width: 100%;
@@ -104,7 +398,8 @@
     input[type="text"],
     input[type="number"],
     input[type="date"],
-    input[type="email"] {
+    input[type="email"],
+    input[type="file"] {
         display: block;
         padding: 0.375rem 0.75rem;
         font-size: 1rem;
@@ -126,6 +421,7 @@
         background-color: #fff;
         border: 1px solid #ced4da;
         border-radius: 0.25rem;
+        min-height: 60px;
     }
 
     input:focus,
@@ -135,5 +431,244 @@
         outline: 0;
         box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
     }
+
+    /* Section cards */
+    .section-card {
+        border: 2px solid #dee2e6;
+    }
+
+    .section-card .card-header {
+        border-bottom: 3px solid rgba(0,0,0,.125);
+    }
+
+    /* Input groups for units */
+    .input-group > input {
+        flex: 2;
+    }
+
+    .input-group > select {
+        flex: 1;
+        border-left: 0;
+    }
+
+    /* Location checkboxes styling */
+    .location-checkboxes .form-check {
+        display: inline-block;
+        margin-right: 1.5rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .location-checkboxes input[type="checkbox"] {
+        width: auto;
+        margin-right: 0.5rem;
+    }
+
+    /* Hazard rows */
+    .hazard-row {
+        background-color: #f8f9fa;
+        padding: 0.75rem;
+        border-radius: 0.25rem;
+        margin-bottom: 0.75rem !important;
+    }
+
+    /* Autocomplete styling */
+    .autocomplete-wrapper {
+        position: relative;
+    }
+
+    .autocomplete-results {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: white;
+        border: 1px solid #ced4da;
+        border-top: none;
+        border-radius: 0 0 0.25rem 0.25rem;
+        max-height: 200px;
+        overflow-y: auto;
+        z-index: 1000;
+        display: none;
+    }
+
+    .autocomplete-item {
+        padding: 0.5rem 0.75rem;
+        cursor: pointer;
+        border-bottom: 1px solid #e9ecef;
+    }
+
+    .autocomplete-item:hover {
+        background-color: #f8f9fa;
+    }
+
+    .autocomplete-item:last-child {
+        border-bottom: none;
+    }
+
+    .autocomplete-item strong {
+        color: #0066cc;
+    }
+
+    .autocomplete-item small {
+        display: block;
+        color: #6c757d;
+    }
 </style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // ==================================
+    // 1. CONDITIONAL DISPLAY FOR "OTHER" FIELDS
+    // ==================================
+
+    // Physical Form Other
+    const physicalForm = document.getElementById('id_physical_form');
+    const physicalFormOtherContainer = document.getElementById('physical_form_other_container');
+
+    function togglePhysicalFormOther() {
+        if (physicalForm && physicalForm.value === 'other') {
+            physicalFormOtherContainer.style.display = 'block';
+        } else {
+            physicalFormOtherContainer.style.display = 'none';
+        }
+    }
+
+    if (physicalForm) {
+        physicalForm.addEventListener('change', togglePhysicalFormOther);
+        togglePhysicalFormOther(); // Initial check
+    }
+
+    // Encapsulation Other
+    const encapsulation = document.getElementById('id_encapsulation');
+    const encapsulationOtherContainer = document.getElementById('encapsulation_other_container');
+
+    function toggleEncapsulationOther() {
+        if (encapsulation && encapsulation.value === 'other') {
+            encapsulationOtherContainer.style.display = 'block';
+        } else {
+            encapsulationOtherContainer.style.display = 'none';
+        }
+    }
+
+    if (encapsulation) {
+        encapsulation.addEventListener('change', toggleEncapsulationOther);
+        toggleEncapsulationOther(); // Initial check
+    }
+
+    // Location Other
+    const locationOther = document.getElementById('id_location_other');
+    const locationOtherContainer = document.getElementById('location_other_container');
+
+    function toggleLocationOther() {
+        if (locationOther && locationOther.checked) {
+            locationOtherContainer.style.display = 'block';
+        } else {
+            locationOtherContainer.style.display = 'none';
+        }
+    }
+
+    if (locationOther) {
+        locationOther.addEventListener('change', toggleLocationOther);
+        toggleLocationOther(); // Initial check
+    }
+
+    // ==================================
+    // 2. AUTO-GROWING TEXTAREAS
+    // ==================================
+
+    function autoGrowTextarea(textarea) {
+        textarea.style.height = 'auto';
+        textarea.style.height = textarea.scrollHeight + 'px';
+    }
+
+    // Apply to all textareas
+    document.querySelectorAll('textarea').forEach(textarea => {
+        textarea.addEventListener('input', function() {
+            autoGrowTextarea(this);
+        });
+        // Initial sizing
+        autoGrowTextarea(textarea);
+    });
+
+    // ==================================
+    // 3. IRF AUTOCOMPLETE
+    // ==================================
+
+    function setupAutocomplete(inputId, resultsId) {
+        const input = document.getElementById(inputId);
+        const resultsDiv = document.getElementById(resultsId);
+
+        if (!input || !resultsDiv) return;
+
+        let timeout = null;
+
+        input.addEventListener('input', function() {
+            clearTimeout(timeout);
+            const query = this.value.trim();
+
+            if (query.length < 2) {
+                resultsDiv.style.display = 'none';
+                return;
+            }
+
+            timeout = setTimeout(() => {
+                fetch(`/api/irf-autocomplete/?q=${encodeURIComponent(query)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.results && data.results.length > 0) {
+                            resultsDiv.innerHTML = '';
+                            data.results.forEach(result => {
+                                const item = document.createElement('div');
+                                item.className = 'autocomplete-item';
+                                item.innerHTML = `
+                                    <strong>${result.irf_number}</strong>
+                                    <small>${result.sample_description}</small>
+                                    <small class="text-muted">Status: ${result.status}</small>
+                                `;
+                                item.addEventListener('click', () => {
+                                    input.value = result.irf_number;
+                                    resultsDiv.style.display = 'none';
+
+                                    // Show link to view IRF
+                                    const link = document.createElement('a');
+                                    link.href = result.url;
+                                    link.target = '_blank';
+                                    link.className = 'd-block mt-1 small';
+                                    link.innerHTML = '<i class="bi bi-box-arrow-up-right"></i> View this IRF';
+
+                                    // Remove any existing links
+                                    const existingLink = input.parentElement.querySelector('a');
+                                    if (existingLink) existingLink.remove();
+
+                                    input.parentElement.appendChild(link);
+                                });
+                                resultsDiv.appendChild(item);
+                            });
+                            resultsDiv.style.display = 'block';
+                        } else {
+                            resultsDiv.style.display = 'none';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Autocomplete error:', error);
+                        resultsDiv.style.display = 'none';
+                    });
+            }, 300);
+        });
+
+        // Close results when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!input.contains(e.target) && !resultsDiv.contains(e.target)) {
+                resultsDiv.style.display = 'none';
+            }
+        });
+    }
+
+    // Setup autocomplete for both reference fields
+    setupAutocomplete('id_dose_rate_reference_irf', 'dose_rate_autocomplete');
+    setupAutocomplete('id_reactivity_reference_irf', 'reactivity_autocomplete');
+});
+</script>
 {% endblock %}

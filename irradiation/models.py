@@ -83,23 +83,55 @@ class IrradiationRequestForm(models.Model):
     )
 
     # e. Irradiation Limits
+    POWER_UNIT_CHOICES = [
+        ('kw', 'kW (kilowatts)'),
+        ('mw', 'MW (megawatts)'),
+        ('w', 'W (watts)'),
+    ]
     max_power = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(0)],
-        help_text="Maximum reactor power (kW) for irradiation"
+        help_text="Maximum reactor power for irradiation"
     )
+    max_power_unit = models.CharField(
+        max_length=10,
+        choices=POWER_UNIT_CHOICES,
+        default='kw'
+    )
+
+    TIME_UNIT_CHOICES = [
+        ('min', 'minutes'),
+        ('hr', 'hours'),
+        ('sec', 'seconds'),
+    ]
     max_time = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(0)],
-        help_text="Irradiation time (minutes) at maximum power"
+        help_text="Irradiation time at maximum power"
     )
+    max_time_unit = models.CharField(
+        max_length=10,
+        choices=TIME_UNIT_CHOICES,
+        default='min'
+    )
+
+    MASS_UNIT_CHOICES = [
+        ('g', 'grams (g)'),
+        ('kg', 'kilograms (kg)'),
+        ('mg', 'milligrams (mg)'),
+    ]
     max_mass = models.DecimalField(
         max_digits=10,
         decimal_places=3,
         validators=[MinValueValidator(0)],
-        help_text="Maximum sample mass (grams) to be irradiated in single irradiation"
+        help_text="Maximum sample mass to be irradiated in single irradiation"
+    )
+    max_mass_unit = models.CharField(
+        max_length=10,
+        choices=MASS_UNIT_CHOICES,
+        default='g'
     )
 
     # f. Expected Dose Rate
@@ -153,6 +185,12 @@ class IrradiationRequestForm(models.Model):
         max_length=20,
         blank=True,
         help_text="Reference IRF number if based on experience"
+    )
+    sop306_calculation_file = models.FileField(
+        upload_to='sop306_calculations/',
+        blank=True,
+        null=True,
+        help_text="Upload SOP 306 calculation file (PDF, Excel, etc.)"
     )
 
     # h. Comments
