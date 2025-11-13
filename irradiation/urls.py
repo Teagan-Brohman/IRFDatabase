@@ -15,4 +15,7 @@ urlpatterns = [
 
     # Sample log views
     path('sample-log/new/', views.SampleLogCreateView.as_view(), name='sample_log_create'),
+
+    # API endpoints
+    path('api/irf-autocomplete/', views.irf_autocomplete, name='irf_autocomplete'),
 ]
