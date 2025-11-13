@@ -1,4 +1,5 @@
 {% extends 'irradiation/base.html' %}
+{% load irf_filters %}
 
 {% block title %}IRF {{ irf.irf_number }} - IRF Database{% endblock %}
 
@@ -57,130 +58,123 @@
              id="details"
              role="tabpanel">
             <div class="card mt-3">
-                <div class="card-body">
+                <div class="card-body p-3">
                     <!-- Section 1: Irradiation Request -->
-                    <h4 class="border-bottom pb-2 mb-3">
+                    <h4 class="border-bottom pb-2 mb-2">
                         <i class="bi bi-1-circle"></i> Irradiation Request
                     </h4>
 
-                    <div class="row mb-3">
+                    <!-- Sample Description -->
+                    <div class="row mb-2">
                         <div class="col-md-12">
-                            <h6 class="text-muted">Sample Description</h6>
-                            <p>{{ irf.sample_description }}</p>
+                            <h6 class="text-muted mb-1"><small>Sample Description</small></h6>
+                            <p class="mb-1">{{ irf.sample_description }}</p>
                         </div>
                     </div>
 
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <h6 class="text-muted">Physical Form</h6>
-                            <p>
-                                <span class="badge bg-primary rounded-pill fs-6">
+                    <!-- Physical Form, Encapsulation & Location in one row -->
+                    <div class="row mb-2 gx-2">
+                        <div class="col-md-4">
+                            <h6 class="text-muted mb-1"><small>Physical Form</small></h6>
+                            <p class="mb-1">
+                                <span class="badge bg-primary rounded-pill">
                                     {{ irf.get_physical_form_display }}
                                 </span>
                                 {% if irf.physical_form_other %}
-                                    <br><small class="text-muted mt-1 d-inline-block">Specification: {{ irf.physical_form_other }}</small>
+                                    <br><small class="text-muted">{{ irf.physical_form_other }}</small>
                                 {% endif %}
                             </p>
                         </div>
-                        <div class="col-md-6">
-                            <h6 class="text-muted">Encapsulation</h6>
-                            <p>
-                                <span class="badge bg-info rounded-pill fs-6">
+                        <div class="col-md-4">
+                            <h6 class="text-muted mb-1"><small>Encapsulation</small></h6>
+                            <p class="mb-1">
+                                <span class="badge bg-info rounded-pill">
                                     {{ irf.get_encapsulation_display }}
                                 </span>
                                 {% if irf.encapsulation_other %}
-                                    <br><small class="text-muted mt-1 d-inline-block">Specification: {{ irf.encapsulation_other }}</small>
+                                    <br><small class="text-muted">{{ irf.encapsulation_other }}</small>
                                 {% endif %}
                             </p>
                         </div>
-                    </div>
-
-                    <div class="row mb-3">
-                        <div class="col-md-12">
-                            <h6 class="text-muted">Irradiation Location(s)</h6>
-                            <p>
-                                <span class="badge bg-secondary rounded-pill fs-6">
-                                    {{ irf.irradiation_location }}
-                                </span>
-                                {% if irf.irradiation_location_other %}
-                                    <br><small class="text-muted mt-1 d-inline-block">Other: {{ irf.irradiation_location_other }}</small>
-                                {% endif %}
-                            </p>
-                        </div>
-                    </div>
-
-                    <h5 class="mt-4 mb-3">Irradiation Limits</h5>
-                    <div class="row mb-3">
                         <div class="col-md-4">
-                            <div class="card bg-light">
-                                <div class="card-body text-center">
-                                    <h6 class="text-muted mb-1">Max Power</h6>
-                                    <h3 class="mb-0">{{ irf.max_power }} <small>{{ irf.get_max_power_unit_display }}</small></h3>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="card bg-light">
-                                <div class="card-body text-center">
-                                    <h6 class="text-muted mb-1">Max Time</h6>
-                                    <h3 class="mb-0">{{ irf.max_time }} <small>{{ irf.get_max_time_unit_display }}</small></h3>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="card bg-light">
-                                <div class="card-body text-center">
-                                    <h6 class="text-muted mb-1">Max Mass</h6>
-                                    <h3 class="mb-0">{{ irf.max_mass }} <small>{{ irf.get_max_mass_unit_display }}</small></h3>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <h5 class="mt-4 mb-3">Expected Dose Rate & Reactivity</h5>
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <h6 class="text-muted">Expected Dose Rate</h6>
-                            <p>
-                                <strong>{{ irf.expected_dose_rate }} mrem/hr</strong> @ 1 foot<br>
-                                <small class="text-muted">
-                                    Basis: {{ irf.get_dose_rate_basis_display }}
-                                    {% if irf.dose_rate_reference_irf %}
-                                        (Ref: IRF {{ irf.dose_rate_reference_irf }})
+                            <h6 class="text-muted mb-1"><small>Irradiation Location(s)</small></h6>
+                            <p class="mb-1">
+                                {% for location in irf.irradiation_location|split_locations %}
+                                    {% if location != 'other' %}
+                                        <span class="badge bg-secondary rounded-pill me-1 mb-1">
+                                            {{ location|format_location }}
+                                        </span>
                                     {% endif %}
-                                </small>
+                                {% endfor %}
+                                {% if irf.irradiation_location_other %}
+                                    <br><small class="text-muted">Other: {{ irf.irradiation_location_other }}</small>
+                                {% endif %}
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Irradiation Limits (Compact) -->
+                    <h5 class="border-bottom pb-1 mb-2 mt-3"><small>Irradiation Limits</small></h5>
+                    <div class="row mb-2 gx-2">
+                        <div class="col-md-4">
+                            <div class="card bg-light border-0">
+                                <div class="card-body text-center p-2">
+                                    <small class="text-muted d-block">Max Power</small>
+                                    <h4 class="mb-0">{{ irf.max_power }} <small class="text-muted">{{ irf.get_max_power_unit_display }}</small></h4>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card bg-light border-0">
+                                <div class="card-body text-center p-2">
+                                    <small class="text-muted d-block">Max Time</small>
+                                    <h4 class="mb-0">{{ irf.max_time }} <small class="text-muted">{{ irf.get_max_time_unit_display }}</small></h4>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card bg-light border-0">
+                                <div class="card-body text-center p-2">
+                                    <small class="text-muted d-block">Max Mass</small>
+                                    <h4 class="mb-0">{{ irf.max_mass }} <small class="text-muted">{{ irf.get_max_mass_unit_display }}</small></h4>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Expected Dose Rate & Reactivity (Compact) -->
+                    <h5 class="border-bottom pb-1 mb-2 mt-3"><small>Expected Dose Rate & Reactivity</small></h5>
+                    <div class="row mb-2">
+                        <div class="col-md-6">
+                            <h6 class="text-muted mb-1"><small>Expected Dose Rate</small></h6>
+                            <p class="mb-1">
+                                <strong>{{ irf.expected_dose_rate }} mrem/hr</strong> @ 1 ft
+                                <br><small class="text-muted">{{ irf.get_dose_rate_basis_display }}{% if irf.dose_rate_reference_irf %} (Ref: {{ irf.dose_rate_reference_irf }}){% endif %}</small>
                             </p>
                             {% if irf.dose_rate_calculation_notes %}
-                                <p><small>{{ irf.dose_rate_calculation_notes }}</small></p>
+                                <p class="mb-1"><small>{{ irf.dose_rate_calculation_notes }}</small></p>
                             {% endif %}
                         </div>
                         <div class="col-md-6">
-                            <h6 class="text-muted">Reactivity Worth</h6>
-                            <p>
-                                <strong>{{ irf.reactivity_worth }}% Δk/k</strong><br>
-                                <small class="text-muted">
-                                    Basis: {{ irf.get_reactivity_basis_display }}
-                                    {% if irf.reactivity_reference_irf %}
-                                        (Ref: IRF {{ irf.reactivity_reference_irf }})
-                                    {% endif %}
-                                </small>
+                            <h6 class="text-muted mb-1"><small>Reactivity Worth</small></h6>
+                            <p class="mb-1">
+                                <strong>{{ irf.reactivity_worth }}% Δk/k</strong>
+                                <br><small class="text-muted">{{ irf.get_reactivity_basis_display }}{% if irf.reactivity_reference_irf %} (Ref: {{ irf.reactivity_reference_irf }}){% endif %}</small>
                             </p>
                             {% if irf.sop306_calculation_file %}
-                                <div class="mt-2">
-                                    <h6 class="text-muted">SOP 306 Calculation File</h6>
-                                    <a href="{{ irf.sop306_calculation_file.url }}" target="_blank" class="btn btn-sm btn-outline-primary">
-                                        <i class="bi bi-file-earmark-pdf"></i> {{ irf.sop306_calculation_file.name|truncatechars:30 }}
-                                    </a>
-                                </div>
+                                <a href="{{ irf.sop306_calculation_file.url }}" target="_blank" class="btn btn-sm btn-outline-primary mt-1">
+                                    <i class="bi bi-file-earmark-pdf"></i> SOP 306 File
+                                </a>
                             {% endif %}
                         </div>
                     </div>
 
-                    <div class="row mb-3">
+                    <!-- Requester Info (Compact) -->
+                    <h5 class="border-bottom pb-1 mb-2 mt-3"><small>Requester Information</small></h5>
+                    <div class="row mb-2">
                         <div class="col-md-6">
-                            <h6 class="text-muted">Requester</h6>
-                            <p>
-                                {{ irf.requester_name }}
+                            <p class="mb-1">
+                                <strong>{{ irf.requester_name }}</strong>
                                 {% if irf.requester_signature_date %}
                                     <br><small class="text-muted">Signed: {{ irf.requester_signature_date }}</small>
                                 {% endif %}
@@ -188,20 +182,19 @@
                         </div>
                         <div class="col-md-6">
                             {% if irf.request_comments %}
-                                <h6 class="text-muted">Comments</h6>
-                                <p>{{ irf.request_comments }}</p>
+                                <p class="mb-1"><small><strong>Comments:</strong> {{ irf.request_comments }}</small></p>
                             {% endif %}
                         </div>
                     </div>
 
                     <!-- Section 2: Review and Approval -->
-                    <h4 class="border-bottom pb-2 mb-3 mt-5">
+                    <h4 class="border-bottom pb-2 mb-2 mt-3">
                         <i class="bi bi-2-circle"></i> Review and Approval
                     </h4>
 
-                    <h5 class="mb-3">Analysis of Potential Hazards</h5>
-                    <div class="table-responsive mb-3">
-                        <table class="table table-sm">
+                    <h5 class="mb-2"><small>Analysis of Potential Hazards</small></h5>
+                    <div class="table-responsive mb-2">
+                        <table class="table table-sm table-bordered mb-0">
                             <thead>
                                 <tr>
                                     <th>Hazard Type</th>
@@ -251,52 +244,43 @@
                     </div>
 
                     {% if irf.additional_restrictions %}
-                        <div class="alert alert-info">
-                            <h6><i class="bi bi-exclamation-triangle"></i> Additional Restrictions/Requirements</h6>
-                            <p class="mb-0">{{ irf.additional_restrictions }}</p>
+                        <div class="alert alert-info mb-2 py-2">
+                            <strong><i class="bi bi-exclamation-triangle"></i> Additional Restrictions:</strong> {{ irf.additional_restrictions }}
                         </div>
                     {% endif %}
 
-                    <h5 class="mt-4 mb-3">Approvals</h5>
-                    <div class="row">
+                    <h5 class="mt-2 mb-2"><small>Approvals</small></h5>
+                    <div class="row gx-2 mb-2">
                         <div class="col-md-6">
-                            <div class="card">
-                                <div class="card-body">
-                                    <h6>Approver 1</h6>
+                            <div class="card border">
+                                <div class="card-body p-2">
+                                    <small class="text-muted">Approver 1</small>
                                     {% if irf.approver1_name %}
-                                        <p class="mb-1">
-                                            <strong>{{ irf.approver1_name }}</strong>
-                                            ({{ irf.get_approver1_role_display }})
+                                        <p class="mb-0">
+                                            <strong>{{ irf.approver1_name }}</strong> <small class="text-muted">({{ irf.get_approver1_role_display }})</small>
+                                            {% if irf.approver1_date %}
+                                                <br><small><i class="bi bi-check-circle-fill text-success"></i> {{ irf.approver1_date }}</small>
+                                            {% endif %}
                                         </p>
-                                        {% if irf.approver1_date %}
-                                            <p class="mb-0">
-                                                <i class="bi bi-check-circle-fill text-success"></i>
-                                                <small>Approved: {{ irf.approver1_date }}</small>
-                                            </p>
-                                        {% endif %}
                                     {% else %}
-                                        <p class="text-muted">Not yet approved</p>
+                                        <p class="mb-0 text-muted"><small>Not yet approved</small></p>
                                     {% endif %}
                                 </div>
                             </div>
                         </div>
                         <div class="col-md-6">
-                            <div class="card">
-                                <div class="card-body">
-                                    <h6>Approver 2</h6>
+                            <div class="card border">
+                                <div class="card-body p-2">
+                                    <small class="text-muted">Approver 2</small>
                                     {% if irf.approver2_name %}
-                                        <p class="mb-1">
-                                            <strong>{{ irf.approver2_name }}</strong>
-                                            ({{ irf.get_approver2_role_display }})
+                                        <p class="mb-0">
+                                            <strong>{{ irf.approver2_name }}</strong> <small class="text-muted">({{ irf.get_approver2_role_display }})</small>
+                                            {% if irf.approver2_date %}
+                                                <br><small><i class="bi bi-check-circle-fill text-success"></i> {{ irf.approver2_date }}</small>
+                                            {% endif %}
                                         </p>
-                                        {% if irf.approver2_date %}
-                                            <p class="mb-0">
-                                                <i class="bi bi-check-circle-fill text-success"></i>
-                                                <small>Approved: {{ irf.approver2_date }}</small>
-                                            </p>
-                                        {% endif %}
                                     {% else %}
-                                        <p class="text-muted">Not yet approved</p>
+                                        <p class="mb-0 text-muted"><small>Not yet approved</small></p>
                                     {% endif %}
                                 </div>
                             </div>
@@ -304,24 +288,22 @@
                     </div>
 
                     {% if irf.is_approved %}
-                        <div class="alert alert-success mt-3">
-                            <i class="bi bi-check-circle-fill"></i>
-                            This IRF has been fully approved with two signatures.
+                        <div class="alert alert-success mb-2 py-2">
+                            <small><i class="bi bi-check-circle-fill"></i> This IRF has been fully approved with two signatures.</small>
                         </div>
                     {% else %}
-                        <div class="alert alert-warning mt-3">
-                            <i class="bi bi-exclamation-triangle"></i>
-                            This IRF requires two approval signatures per SOP 702.
+                        <div class="alert alert-warning mb-2 py-2">
+                            <small><i class="bi bi-exclamation-triangle"></i> This IRF requires two approval signatures per SOP 702.</small>
                         </div>
                     {% endif %}
 
-                    <!-- Metadata -->
-                    <div class="row mt-4 pt-3 border-top">
+                    <!-- Metadata (Compact) -->
+                    <div class="row mt-2 pt-2 border-top">
                         <div class="col-md-4">
-                            <small class="text-muted">Created: {{ irf.created_date }}</small>
+                            <small class="text-muted">Created: {{ irf.created_date|date:"m/d/Y" }}</small>
                         </div>
                         <div class="col-md-4">
-                            <small class="text-muted">Updated: {{ irf.updated_date }}</small>
+                            <small class="text-muted">Updated: {{ irf.updated_date|date:"m/d/Y" }}</small>
                         </div>
                         <div class="col-md-4">
                             <small class="text-muted">Total Irradiations: {{ irf.total_irradiations }}</small>

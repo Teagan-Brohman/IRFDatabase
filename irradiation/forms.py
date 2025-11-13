@@ -9,8 +9,8 @@ class IRFForm(forms.ModelForm):
     # Multiple selection for irradiation locations
     irradiation_locations = forms.MultipleChoiceField(
         choices=[
-            ('bare_rabbit', 'Bare Rabbit'),
-            ('cad_rabbit', 'Cad Rabbit'),
+            ('bare_rabbit_tube', 'Bare Rabbit Tube'),
+            ('cadmium_rabbit_tube', 'Cadmium Rabbit Tube'),
             ('beam_port', 'Beam Port'),
             ('thermal_column', 'Thermal Column'),
         ],
