@@ -27,6 +27,71 @@
         </div>
     </div>
 
+    <!-- Version History Alert -->
+    {% if version_history|length > 1 %}
+        <div class="alert {% if is_latest_version %}alert-info{% else %}alert-warning{% endif %} mb-3">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>
+                        <i class="bi bi-clock-history"></i>
+                        {% if is_latest_version %}
+                            This IRF has {{ version_history|length }} version(s)
+                        {% else %}
+                            <i class="bi bi-exclamation-triangle"></i> You are viewing an older version (v{{ irf.version_number }})
+                        {% endif %}
+                    </strong>
+                    <br>
+                    <small>
+                        {% if irf.change_type == 'amendment' %}Amendment{% elif irf.change_type == 'fix' %}Minor Fix{% else %}Original{% endif %}
+                        {% if irf.change_notes %} - {{ irf.change_notes }}{% endif %}
+                    </small>
+                </div>
+                <div>
+                    <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#versionHistory">
+                        <i class="bi bi-list"></i> View Version History
+                    </button>
+                </div>
+            </div>
+
+            <!-- Collapsible Version History -->
+            <div class="collapse mt-3" id="versionHistory">
+                <div class="card">
+                    <div class="card-header bg-light">
+                        <strong>Version History</strong>
+                    </div>
+                    <ul class="list-group list-group-flush">
+                        {% for version in version_history reversed %}
+                            <li class="list-group-item {% if version.pk == irf.pk %}active{% endif %}">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong>Version {{ version.version_number }}</strong>
+                                        <span class="badge bg-secondary ms-2">{{ version.get_change_type_display }}</span>
+                                        {% if version.pk == irf.pk %}
+                                            <span class="badge bg-primary ms-1">Current View</span>
+                                        {% endif %}
+                                        {% if version.is_latest_version %}
+                                            <span class="badge bg-success ms-1">Latest</span>
+                                        {% endif %}
+                                        <br>
+                                        <small class="text-muted">
+                                            Created: {{ version.created_date|date:"m/d/Y" }}
+                                            {% if version.change_notes %} - {{ version.change_notes }}{% endif %}
+                                        </small>
+                                    </div>
+                                    {% if version.pk != irf.pk %}
+                                        <a href="{% url 'irradiation:irf_detail' version.pk %}" class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-eye"></i> View
+                                        </a>
+                                    {% endif %}
+                                </div>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
     <!-- Tabs -->
     <ul class="nav nav-tabs" id="irfTabs" role="tablist">
         <li class="nav-item" role="presentation">

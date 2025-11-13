@@ -80,10 +80,16 @@ class IRFDetailView(DetailView):
     context_object_name = 'irf'
 
     def get_context_data(self, **kwargs):
-        """Add sample logs to context"""
+        """Add sample logs and version history to context"""
         context = super().get_context_data(**kwargs)
         context['sample_logs'] = self.object.irradiation_logs.all().order_by('-irradiation_date')
         context['active_tab'] = self.request.GET.get('tab', 'details')
+
+        # Add version history
+        context['version_history'] = self.object.get_version_history()
+        context['has_amendments'] = self.object.has_amendments()
+        context['is_latest_version'] = self.object.is_latest_version()
+
         return context
 
 
@@ -100,6 +106,33 @@ class IRFUpdateView(UpdateView):
     model = IrradiationRequestForm
     template_name = 'irradiation/irf_form.html'
     form_class = IRFForm
+
+    def form_valid(self, form):
+        """Handle amendment vs fix logic"""
+        change_type = self.request.POST.get('change_type', 'fix')
+        change_notes = self.request.POST.get('change_notes', '')
+
+        if change_type == 'amendment':
+            # Create a new version (amendment)
+            old_irf = self.object
+            new_irf = form.save(commit=False)
+            new_irf.pk = None  # Create new object
+            new_irf.parent_version = old_irf
+            new_irf.version_number = old_irf.version_number + 1
+            new_irf.change_type = 'amendment'
+            new_irf.change_notes = change_notes
+            new_irf.save()
+
+            # Update the M2M relationships if any
+            form.save_m2m()
+
+            self.object = new_irf
+            return super(UpdateView, self).form_valid(form)
+        else:
+            # Just a fix, update in place
+            self.object.change_type = 'fix' if self.object.version_number > 1 else 'original'
+            self.object.change_notes = change_notes
+            return super().form_valid(form)
 
     def get_success_url(self):
         return reverse_lazy('irradiation:irf_detail', kwargs={'pk': self.object.pk})

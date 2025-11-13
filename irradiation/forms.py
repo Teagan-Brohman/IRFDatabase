@@ -113,6 +113,39 @@ class IRFForm(forms.ModelForm):
 
         self.instance.irradiation_location = location_str
 
+        # Conditional validation: Required fields enforced for approved/pending_review status
+        status = cleaned_data.get('status')
+        if status in ['approved', 'pending_review']:
+            required_fields = {
+                'irf_number': 'IRF Number',
+                'sample_description': 'Sample Description',
+                'physical_form': 'Physical Form',
+                'encapsulation': 'Encapsulation',
+                'max_power': 'Maximum Power',
+                'max_time': 'Maximum Time',
+                'max_mass': 'Maximum Mass',
+                'expected_dose_rate': 'Expected Dose Rate',
+                'dose_rate_basis': 'Dose Rate Basis',
+                'reactivity_worth': 'Reactivity Worth',
+                'reactivity_basis': 'Reactivity Basis',
+                'requester_name': 'Requester Name',
+            }
+
+            for field, label in required_fields.items():
+                if not cleaned_data.get(field):
+                    self.add_error(field, f'{label} is required for {status.replace("_", " ")} IRFs.')
+
+            # Location validation
+            if not location_str:
+                self.add_error(None, 'At least one irradiation location is required for approved/pending review IRFs.')
+
+            # Approval validation for approved status
+            if status == 'approved':
+                if not cleaned_data.get('approver1_name') or not cleaned_data.get('approver1_date'):
+                    self.add_error('approver1_name', 'First approver information is required for approved IRFs.')
+                if not cleaned_data.get('approver2_name') or not cleaned_data.get('approver2_date'):
+                    self.add_error('approver2_name', 'Second approver information is required for approved IRFs.')
+
         return cleaned_data
 
 

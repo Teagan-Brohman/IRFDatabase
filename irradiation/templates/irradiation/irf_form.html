@@ -372,7 +372,7 @@
                 <!-- Form Actions -->
                 <div class="card mb-4">
                     <div class="card-body text-center">
-                        <button type="submit" class="btn btn-primary btn-lg">
+                        <button type="button" id="saveButton" class="btn btn-primary btn-lg">
                             <i class="bi bi-save"></i> Save IRF
                         </button>
                         <a href="{% if object %}{% url 'irradiation:irf_detail' object.pk %}{% else %}{% url 'irradiation:irf_list' %}{% endif %}"
@@ -382,6 +382,10 @@
                     </div>
                 </div>
 
+                <!-- Hidden fields for version tracking -->
+                <input type="hidden" id="change_type" name="change_type" value="">
+                <input type="hidden" id="change_notes" name="change_notes" value="">
+
                 <div class="alert alert-info">
                     <small>
                         <i class="bi bi-info-circle"></i>
@@ -390,6 +394,52 @@
                     </small>
                 </div>
             </form>
+
+            <!-- Amendment/Fix Modal -->
+            <div class="modal fade" id="changeTypeModal" tabindex="-1" aria-labelledby="changeTypeModalLabel" aria-hidden="true">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header bg-warning">
+                            <h5 class="modal-title" id="changeTypeModalLabel">
+                                <i class="bi bi-exclamation-triangle"></i> Save Changes
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p class="mb-3">You are editing an existing IRF. Please specify the type of change:</p>
+
+                            <div class="form-check mb-3 p-3 border rounded">
+                                <input class="form-check-input" type="radio" name="changeTypeRadio" id="fixRadio" value="fix" checked>
+                                <label class="form-check-label" for="fixRadio">
+                                    <strong>Minor Fix/Correction</strong>
+                                    <br><small class="text-muted">Typos, formatting, or small corrections that don't change the substance of the IRF</small>
+                                </label>
+                            </div>
+
+                            <div class="form-check mb-3 p-3 border rounded">
+                                <input class="form-check-input" type="radio" name="changeTypeRadio" id="amendmentRadio" value="amendment">
+                                <label class="form-check-label" for="amendmentRadio">
+                                    <strong>Amendment</strong>
+                                    <br><small class="text-muted">Significant changes to limits, procedures, or requirements. Creates a new version.</small>
+                                </label>
+                            </div>
+
+                            <div class="mt-3">
+                                <label for="changeNotesTextarea" class="form-label fw-bold">
+                                    Change Notes <span class="text-muted">(Optional)</span>
+                                </label>
+                                <textarea class="form-control" id="changeNotesTextarea" rows="3" placeholder="Describe what changed and why..."></textarea>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="button" class="btn btn-primary" id="confirmSaveBtn">
+                                <i class="bi bi-save"></i> Save Changes
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -672,6 +722,23 @@ document.addEventListener('DOMContentLoaded', function() {
         toggleOtherHazardNotes(); // Initial check
     }
 
+    // SOP 306 File - Conditional Display
+    const reactivityBasis = document.getElementById('id_reactivity_basis');
+    const sop306FileContainer = document.getElementById('sop306_file_container');
+
+    function toggleSOP306File() {
+        if (reactivityBasis && reactivityBasis.value === 'sop306') {
+            sop306FileContainer.style.display = 'block';
+        } else {
+            sop306FileContainer.style.display = 'none';
+        }
+    }
+
+    if (reactivityBasis) {
+        reactivityBasis.addEventListener('change', toggleSOP306File);
+        toggleSOP306File(); // Initial check
+    }
+
     // ==================================
     // 2. AUTO-GROWING TEXTAREAS
     // ==================================
@@ -767,6 +834,52 @@ document.addEventListener('DOMContentLoaded', function() {
     // Setup autocomplete for both reference fields
     setupAutocomplete('id_dose_rate_reference_irf', 'dose_rate_autocomplete');
     setupAutocomplete('id_reactivity_reference_irf', 'reactivity_autocomplete');
+
+    // ==================================
+    // 4. SAVE BUTTON - FIX VS AMENDMENT MODAL
+    // ==================================
+
+    const saveButton = document.getElementById('saveButton');
+    const irfForm = document.getElementById('irfForm');
+    const isEditMode = {{ 'true' if object else 'false' }};
+
+    if (saveButton) {
+        saveButton.addEventListener('click', function(e) {
+            e.preventDefault();
+
+            // If creating new IRF, submit directly
+            if (!isEditMode) {
+                document.getElementById('change_type').value = 'original';
+                irfForm.submit();
+                return;
+            }
+
+            // If editing, show modal to ask Fix vs Amendment
+            const modal = new bootstrap.Modal(document.getElementById('changeTypeModal'));
+            modal.show();
+        });
+    }
+
+    // Handle confirm save button in modal
+    const confirmSaveBtn = document.getElementById('confirmSaveBtn');
+    if (confirmSaveBtn) {
+        confirmSaveBtn.addEventListener('click', function() {
+            // Get selected change type
+            const selectedType = document.querySelector('input[name="changeTypeRadio"]:checked').value;
+            const changeNotes = document.getElementById('changeNotesTextarea').value;
+
+            // Set hidden field values
+            document.getElementById('change_type').value = selectedType;
+            document.getElementById('change_notes').value = changeNotes;
+
+            // Close modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('changeTypeModal'));
+            modal.hide();
+
+            // Submit form
+            irfForm.submit();
+        });
+    }
 });
 
 // ==================================
