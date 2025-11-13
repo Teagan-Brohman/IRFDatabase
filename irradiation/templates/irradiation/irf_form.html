@@ -841,7 +841,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const saveButton = document.getElementById('saveButton');
     const irfForm = document.getElementById('irfForm');
-    const isEditMode = {{ 'true' if object else 'false' }};
+    const isEditMode = {% if object %}true{% else %}false{% endif %};
 
     if (saveButton) {
         saveButton.addEventListener('click', function(e) {
