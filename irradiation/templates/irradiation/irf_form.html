@@ -53,31 +53,30 @@
                             <small class="form-text text-muted d-block">{{ form.sample_description.help_text }}</small>
                         </div>
 
-                        <!-- Physical Form -->
-                        <div class="row mb-4">
+                        <!-- Physical Form & Encapsulation (side-by-side) -->
+                        <div class="row mb-3">
                             <div class="col-md-6">
                                 <label for="id_physical_form" class="form-label fw-bold">
                                     Physical Form <span class="text-danger">*</span>
                                 </label>
                                 {{ form.physical_form }}
                             </div>
-                            <div class="col-md-6" id="physical_form_other_container" style="display:none;">
-                                <label for="id_physical_form_other" class="form-label fw-bold">
-                                    Specify Other Physical Form
-                                </label>
-                                {{ form.physical_form_other }}
-                            </div>
-                        </div>
-
-                        <!-- Encapsulation -->
-                        <div class="row mb-4">
                             <div class="col-md-6">
                                 <label for="id_encapsulation" class="form-label fw-bold">
                                     Encapsulation <span class="text-danger">*</span>
                                 </label>
                                 {{ form.encapsulation }}
                             </div>
-                            <div class="col-md-6" id="encapsulation_other_container" style="display:none;">
+                        </div>
+                        <!-- "Other" specification fields (shown when selected) -->
+                        <div class="row mb-4">
+                            <div class="col-12" id="physical_form_other_container" style="display:none;">
+                                <label for="id_physical_form_other" class="form-label fw-bold">
+                                    Specify Other Physical Form
+                                </label>
+                                {{ form.physical_form_other }}
+                            </div>
+                            <div class="col-12" id="encapsulation_other_container" style="display:none;">
                                 <label for="id_encapsulation_other" class="form-label fw-bold">
                                     Specify Other Encapsulation
                                 </label>
@@ -279,52 +278,52 @@
                     </div>
                     <div class="card-body">
                         <!-- Hazard Analysis -->
-                        <h5 class="border-bottom pb-2 mb-3">Hazard Analysis</h5>
+                        <h5 class="border-bottom pb-2 mb-3">Analysis of Potential Hazards</h5>
 
-                        <!-- Reactivity Hazard -->
+                        <!-- All 4 Hazard Fields Side-by-Side -->
                         <div class="row mb-3 hazard-row">
                             <div class="col-md-3">
                                 <label for="id_reactivity_hazard" class="form-label fw-bold">Reactivity</label>
                                 {{ form.reactivity_hazard }}
                             </div>
-                            <div class="col-md-9" id="reactivity_hazard_notes_container" style="display:none;">
-                                <label for="id_reactivity_hazard_notes" class="form-label fw-bold">Notes (Explain Hazard)</label>
-                                {{ form.reactivity_hazard_notes }}
-                            </div>
-                        </div>
-
-                        <!-- Dose Rate Hazard -->
-                        <div class="row mb-3 hazard-row">
                             <div class="col-md-3">
                                 <label for="id_dose_rate_hazard" class="form-label fw-bold">Dose Rate</label>
                                 {{ form.dose_rate_hazard }}
                             </div>
-                            <div class="col-md-9" id="dose_rate_hazard_notes_container" style="display:none;">
-                                <label for="id_dose_rate_hazard_notes" class="form-label fw-bold">Notes (Explain Hazard)</label>
-                                {{ form.dose_rate_hazard_notes }}
-                            </div>
-                        </div>
-
-                        <!-- Reactor Equipment Hazard -->
-                        <div class="row mb-3 hazard-row">
                             <div class="col-md-3">
                                 <label for="id_reactor_equipment_hazard" class="form-label fw-bold">Reactor Equipment</label>
                                 {{ form.reactor_equipment_hazard }}
                             </div>
-                            <div class="col-md-9" id="reactor_equipment_hazard_notes_container" style="display:none;">
-                                <label for="id_reactor_equipment_hazard_notes" class="form-label fw-bold">Notes (Explain Hazard)</label>
-                                {{ form.reactor_equipment_hazard_notes }}
-                            </div>
-                        </div>
-
-                        <!-- Other Hazard -->
-                        <div class="row mb-3 hazard-row">
                             <div class="col-md-3">
                                 <label for="id_other_hazard" class="form-label fw-bold">Other Hazards</label>
                                 {{ form.other_hazard }}
                             </div>
-                            <div class="col-md-9" id="other_hazard_notes_container" style="display:none;">
-                                <label for="id_other_hazard_notes" class="form-label fw-bold">Notes (Explain Hazard)</label>
+                        </div>
+
+                        <!-- Hazard Notes (shown when "Other" is selected) -->
+                        <div class="row mb-3">
+                            <div class="col-12" id="reactivity_hazard_notes_container" style="display:none;">
+                                <label for="id_reactivity_hazard_notes" class="form-label fw-bold">
+                                    <i class="bi bi-arrow-return-right"></i> Reactivity Hazard Notes (Explain)
+                                </label>
+                                {{ form.reactivity_hazard_notes }}
+                            </div>
+                            <div class="col-12" id="dose_rate_hazard_notes_container" style="display:none;">
+                                <label for="id_dose_rate_hazard_notes" class="form-label fw-bold">
+                                    <i class="bi bi-arrow-return-right"></i> Dose Rate Hazard Notes (Explain)
+                                </label>
+                                {{ form.dose_rate_hazard_notes }}
+                            </div>
+                            <div class="col-12" id="reactor_equipment_hazard_notes_container" style="display:none;">
+                                <label for="id_reactor_equipment_hazard_notes" class="form-label fw-bold">
+                                    <i class="bi bi-arrow-return-right"></i> Reactor Equipment Hazard Notes (Explain)
+                                </label>
+                                {{ form.reactor_equipment_hazard_notes }}
+                            </div>
+                            <div class="col-12" id="other_hazard_notes_container" style="display:none;">
+                                <label for="id_other_hazard_notes" class="form-label fw-bold">
+                                    <i class="bi bi-arrow-return-right"></i> Other Hazard Notes (Explain)
+                                </label>
                                 {{ form.other_hazard_notes }}
                             </div>
                         </div>

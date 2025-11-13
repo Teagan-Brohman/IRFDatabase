@@ -64,37 +64,46 @@
                     </h4>
 
                     <div class="row mb-3">
-                        <div class="col-md-6">
+                        <div class="col-md-12">
                             <h6 class="text-muted">Sample Description</h6>
                             <p>{{ irf.sample_description }}</p>
                         </div>
-                        <div class="col-md-3">
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
                             <h6 class="text-muted">Physical Form</h6>
                             <p>
-                                {{ irf.get_physical_form_display }}
+                                <span class="badge bg-primary rounded-pill fs-6">
+                                    {{ irf.get_physical_form_display }}
+                                </span>
                                 {% if irf.physical_form_other %}
-                                    ({{ irf.physical_form_other }})
+                                    <br><small class="text-muted mt-1 d-inline-block">Specification: {{ irf.physical_form_other }}</small>
                                 {% endif %}
                             </p>
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-6">
                             <h6 class="text-muted">Encapsulation</h6>
                             <p>
-                                {{ irf.get_encapsulation_display }}
+                                <span class="badge bg-info rounded-pill fs-6">
+                                    {{ irf.get_encapsulation_display }}
+                                </span>
                                 {% if irf.encapsulation_other %}
-                                    ({{ irf.encapsulation_other }})
+                                    <br><small class="text-muted mt-1 d-inline-block">Specification: {{ irf.encapsulation_other }}</small>
                                 {% endif %}
                             </p>
                         </div>
                     </div>
 
                     <div class="row mb-3">
-                        <div class="col-md-6">
-                            <h6 class="text-muted">Irradiation Location</h6>
+                        <div class="col-md-12">
+                            <h6 class="text-muted">Irradiation Location(s)</h6>
                             <p>
-                                {{ irf.irradiation_location }}
+                                <span class="badge bg-secondary rounded-pill fs-6">
+                                    {{ irf.irradiation_location }}
+                                </span>
                                 {% if irf.irradiation_location_other %}
-                                    <br><small class="text-muted">{{ irf.irradiation_location_other }}</small>
+                                    <br><small class="text-muted mt-1 d-inline-block">Other: {{ irf.irradiation_location_other }}</small>
                                 {% endif %}
                             </p>
                         </div>
@@ -190,7 +199,7 @@
                         <i class="bi bi-2-circle"></i> Review and Approval
                     </h4>
 
-                    <h5 class="mb-3">Hazard Analysis</h5>
+                    <h5 class="mb-3">Analysis of Potential Hazards</h5>
                     <div class="table-responsive mb-3">
                         <table class="table table-sm">
                             <thead>
@@ -202,36 +211,36 @@
                             </thead>
                             <tbody>
                                 <tr>
-                                    <td>Reactivity</td>
+                                    <td><strong>Reactivity</strong></td>
                                     <td>
-                                        <span class="badge {% if irf.reactivity_hazard == 'none' %}bg-success{% else %}bg-warning{% endif %}">
+                                        <span class="badge rounded-pill fs-6 {% if irf.reactivity_hazard == 'none' %}bg-success{% elif irf.reactivity_hazard == 'other' %}bg-danger{% else %}bg-warning text-dark{% endif %}">
                                             {{ irf.get_reactivity_hazard_display }}
                                         </span>
                                     </td>
                                     <td>{{ irf.reactivity_hazard_notes|default:"-" }}</td>
                                 </tr>
                                 <tr>
-                                    <td>Dose Rate</td>
+                                    <td><strong>Dose Rate</strong></td>
                                     <td>
-                                        <span class="badge {% if irf.dose_rate_hazard == 'none' %}bg-success{% else %}bg-warning{% endif %}">
+                                        <span class="badge rounded-pill fs-6 {% if irf.dose_rate_hazard == 'none' %}bg-success{% elif irf.dose_rate_hazard == 'other' %}bg-danger{% else %}bg-warning text-dark{% endif %}">
                                             {{ irf.get_dose_rate_hazard_display }}
                                         </span>
                                     </td>
                                     <td>{{ irf.dose_rate_hazard_notes|default:"-" }}</td>
                                 </tr>
                                 <tr>
-                                    <td>Reactor Equipment</td>
+                                    <td><strong>Reactor Equipment</strong></td>
                                     <td>
-                                        <span class="badge {% if irf.reactor_equipment_hazard == 'none' %}bg-success{% else %}bg-warning{% endif %}">
+                                        <span class="badge rounded-pill fs-6 {% if irf.reactor_equipment_hazard == 'none' %}bg-success{% elif irf.reactor_equipment_hazard == 'other' %}bg-danger{% else %}bg-warning text-dark{% endif %}">
                                             {{ irf.get_reactor_equipment_hazard_display }}
                                         </span>
                                     </td>
                                     <td>{{ irf.reactor_equipment_hazard_notes|default:"-" }}</td>
                                 </tr>
                                 <tr>
-                                    <td>Other</td>
+                                    <td><strong>Other Hazards</strong></td>
                                     <td>
-                                        <span class="badge {% if irf.other_hazard == 'none' %}bg-success{% else %}bg-warning{% endif %}">
+                                        <span class="badge rounded-pill fs-6 {% if irf.other_hazard == 'none' %}bg-success{% elif irf.other_hazard == 'other' %}bg-danger{% else %}bg-warning text-dark{% endif %}">
                                             {{ irf.get_other_hazard_display }}
                                         </span>
                                     </td>
