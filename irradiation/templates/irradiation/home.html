@@ -1,0 +1,169 @@
+{% extends 'irradiation/base.html' %}
+
+{% block title %}Home - IRF Database{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Hero Section -->
+    <div class="text-center mb-5">
+        <h1 class="display-4 mb-3">
+            <i class="bi bi-radioactive text-primary"></i>
+            Irradiation Request Form Database
+        </h1>
+        <p class="lead text-muted">
+            Missouri S&T Nuclear Reactor Sample Tracking System
+        </p>
+    </div>
+
+    <!-- Quick Search -->
+    <div class="search-box mb-5">
+        <form action="{% url 'irradiation:irf_list' %}" method="get">
+            <div class="input-group input-group-lg">
+                <input type="text"
+                       class="form-control"
+                       name="q"
+                       placeholder="Search by IRF number, sample description, or requester..."
+                       autofocus>
+                <button class="btn btn-primary" type="submit">
+                    <i class="bi bi-search"></i> Search
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card stat-card">
+                <h3>{{ total_irfs }}</h3>
+                <p>Total IRFs</p>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card stat-card">
+                <h3>{{ approved_irfs }}</h3>
+                <p>Approved IRFs</p>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card stat-card">
+                <h3>{{ total_logs }}</h3>
+                <p>Sample Irradiations</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="row">
+        <!-- Recent IRFs -->
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-clock-history"></i> Recent IRFs
+                </div>
+                <div class="card-body">
+                    {% if recent_irfs %}
+                        <div class="list-group list-group-flush">
+                            {% for irf in recent_irfs %}
+                                <a href="{% url 'irradiation:irf_detail' irf.pk %}"
+                                   class="list-group-item list-group-item-action">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <h6 class="mb-1">IRF {{ irf.irf_number }}</h6>
+                                            <p class="mb-1 text-muted small">
+                                                {{ irf.sample_description|truncatewords:10 }}
+                                            </p>
+                                        </div>
+                                        <span class="badge status-badge-{{ irf.status }}">
+                                            {{ irf.get_status_display }}
+                                        </span>
+                                    </div>
+                                </a>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="text-muted">No IRFs found.</p>
+                    {% endif %}
+                </div>
+                <div class="card-footer text-center">
+                    <a href="{% url 'irradiation:irf_list' %}" class="btn btn-sm btn-outline-primary">
+                        View All IRFs <i class="bi bi-arrow-right"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Irradiations -->
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-activity"></i> Recent Irradiations
+                </div>
+                <div class="card-body">
+                    {% if recent_logs %}
+                        <div class="list-group list-group-flush">
+                            {% for log in recent_logs %}
+                                <a href="{% url 'irradiation:irf_detail' log.irf.pk %}?tab=logs"
+                                   class="list-group-item list-group-item-action">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <h6 class="mb-1">{{ log.sample_id }}</h6>
+                                            <p class="mb-0 text-muted small">
+                                                IRF {{ log.irf.irf_number }} | {{ log.irradiation_date }}
+                                            </p>
+                                        </div>
+                                        <small class="text-muted">
+                                            {{ log.actual_power }} kW
+                                        </small>
+                                    </div>
+                                </a>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="text-muted">No irradiation logs found.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-lightning-charge"></i> Quick Actions
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-md-3">
+                            <a href="{% url 'irradiation:irf_create' %}" class="btn btn-outline-primary btn-lg w-100 mb-2">
+                                <i class="bi bi-plus-circle-fill"></i><br>
+                                <span>Create New IRF</span>
+                            </a>
+                        </div>
+                        <div class="col-md-3">
+                            <a href="{% url 'irradiation:sample_log_create' %}" class="btn btn-outline-success btn-lg w-100 mb-2">
+                                <i class="bi bi-journal-plus"></i><br>
+                                <span>Add Sample Log</span>
+                            </a>
+                        </div>
+                        <div class="col-md-3">
+                            <a href="{% url 'irradiation:irf_list' %}" class="btn btn-outline-info btn-lg w-100 mb-2">
+                                <i class="bi bi-search"></i><br>
+                                <span>Search IRFs</span>
+                            </a>
+                        </div>
+                        <div class="col-md-3">
+                            <a href="{% url 'admin:index' %}" class="btn btn-outline-secondary btn-lg w-100 mb-2">
+                                <i class="bi bi-gear-fill"></i><br>
+                                <span>Admin Panel</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
