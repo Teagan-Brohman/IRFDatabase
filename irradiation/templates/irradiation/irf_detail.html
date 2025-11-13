@@ -106,7 +106,7 @@
                             <div class="card bg-light">
                                 <div class="card-body text-center">
                                     <h6 class="text-muted mb-1">Max Power</h6>
-                                    <h3 class="mb-0">{{ irf.max_power }} <small>kW</small></h3>
+                                    <h3 class="mb-0">{{ irf.max_power }} <small>{{ irf.get_max_power_unit_display }}</small></h3>
                                 </div>
                             </div>
                         </div>
@@ -114,7 +114,7 @@
                             <div class="card bg-light">
                                 <div class="card-body text-center">
                                     <h6 class="text-muted mb-1">Max Time</h6>
-                                    <h3 class="mb-0">{{ irf.max_time }} <small>min</small></h3>
+                                    <h3 class="mb-0">{{ irf.max_time }} <small>{{ irf.get_max_time_unit_display }}</small></h3>
                                 </div>
                             </div>
                         </div>
@@ -122,7 +122,7 @@
                             <div class="card bg-light">
                                 <div class="card-body text-center">
                                     <h6 class="text-muted mb-1">Max Mass</h6>
-                                    <h3 class="mb-0">{{ irf.max_mass }} <small>g</small></h3>
+                                    <h3 class="mb-0">{{ irf.max_mass }} <small>{{ irf.get_max_mass_unit_display }}</small></h3>
                                 </div>
                             </div>
                         </div>
@@ -156,6 +156,14 @@
                                     {% endif %}
                                 </small>
                             </p>
+                            {% if irf.sop306_calculation_file %}
+                                <div class="mt-2">
+                                    <h6 class="text-muted">SOP 306 Calculation File</h6>
+                                    <a href="{{ irf.sop306_calculation_file.url }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-file-earmark-pdf"></i> {{ irf.sop306_calculation_file.name|truncatechars:30 }}
+                                    </a>
+                                </div>
+                            {% endif %}
                         </div>
                     </div>
 

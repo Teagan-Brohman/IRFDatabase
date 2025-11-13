@@ -85,7 +85,7 @@ class IrradiationRequestForm(models.Model):
     # e. Irradiation Limits
     POWER_UNIT_CHOICES = [
         ('kw', 'kW (kilowatts)'),
-        ('mw', 'MW (megawatts)'),
+        ('mw', 'mW (milliwatts)'),
         ('w', 'W (watts)'),
     ]
     max_power = models.DecimalField(

@@ -211,6 +211,37 @@
                             </label>
                             {{ form.sop306_calculation_file }}
                             <small class="form-text text-muted d-block">{{ form.sop306_calculation_file.help_text }}</small>
+
+                            {% if object and object.sop306_calculation_file %}
+                                <div class="mt-2 p-3 border rounded bg-light">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <strong>Current File:</strong>
+                                        <div>
+                                            <a href="{{ object.sop306_calculation_file.url }}" target="_blank" class="btn btn-sm btn-primary">
+                                                <i class="bi bi-download"></i> Download
+                                            </a>
+                                            <button type="button" class="btn btn-sm btn-info" onclick="togglePDFViewer()">
+                                                <i class="bi bi-eye"></i> <span id="viewerToggleText">View</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <small class="text-muted">{{ object.sop306_calculation_file.name }}</small>
+
+                                    <!-- PDF Viewer -->
+                                    <div id="pdfViewerContainer" style="display:none;" class="mt-3">
+                                        {% if object.sop306_calculation_file.name|lower|slice:"-4:" == ".pdf" %}
+                                            <iframe src="{{ object.sop306_calculation_file.url }}"
+                                                    style="width:100%; height:500px; border:1px solid #dee2e6;"
+                                                    frameborder="0">
+                                            </iframe>
+                                        {% else %}
+                                            <div class="alert alert-info">
+                                                <i class="bi bi-info-circle"></i> Preview not available for this file type. Click Download to view.
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            {% endif %}
                         </div>
 
                         <!-- Request Comments & Requester -->
@@ -256,8 +287,8 @@
                                 <label for="id_reactivity_hazard" class="form-label fw-bold">Reactivity</label>
                                 {{ form.reactivity_hazard }}
                             </div>
-                            <div class="col-md-9">
-                                <label for="id_reactivity_hazard_notes" class="form-label fw-bold">Notes (if Other)</label>
+                            <div class="col-md-9" id="reactivity_hazard_notes_container" style="display:none;">
+                                <label for="id_reactivity_hazard_notes" class="form-label fw-bold">Notes (Explain Hazard)</label>
                                 {{ form.reactivity_hazard_notes }}
                             </div>
                         </div>
@@ -268,8 +299,8 @@
                                 <label for="id_dose_rate_hazard" class="form-label fw-bold">Dose Rate</label>
                                 {{ form.dose_rate_hazard }}
                             </div>
-                            <div class="col-md-9">
-                                <label for="id_dose_rate_hazard_notes" class="form-label fw-bold">Notes (if Other)</label>
+                            <div class="col-md-9" id="dose_rate_hazard_notes_container" style="display:none;">
+                                <label for="id_dose_rate_hazard_notes" class="form-label fw-bold">Notes (Explain Hazard)</label>
                                 {{ form.dose_rate_hazard_notes }}
                             </div>
                         </div>
@@ -280,8 +311,8 @@
                                 <label for="id_reactor_equipment_hazard" class="form-label fw-bold">Reactor Equipment</label>
                                 {{ form.reactor_equipment_hazard }}
                             </div>
-                            <div class="col-md-9">
-                                <label for="id_reactor_equipment_hazard_notes" class="form-label fw-bold">Notes (if Other)</label>
+                            <div class="col-md-9" id="reactor_equipment_hazard_notes_container" style="display:none;">
+                                <label for="id_reactor_equipment_hazard_notes" class="form-label fw-bold">Notes (Explain Hazard)</label>
                                 {{ form.reactor_equipment_hazard_notes }}
                             </div>
                         </div>
@@ -292,8 +323,8 @@
                                 <label for="id_other_hazard" class="form-label fw-bold">Other Hazards</label>
                                 {{ form.other_hazard }}
                             </div>
-                            <div class="col-md-9">
-                                <label for="id_other_hazard_notes" class="form-label fw-bold">Notes (if Other)</label>
+                            <div class="col-md-9" id="other_hazard_notes_container" style="display:none;">
+                                <label for="id_other_hazard_notes" class="form-label fw-bold">Notes (Explain Hazard)</label>
                                 {{ form.other_hazard_notes }}
                             </div>
                         </div>
@@ -574,6 +605,74 @@ document.addEventListener('DOMContentLoaded', function() {
         toggleLocationOther(); // Initial check
     }
 
+    // Hazard Notes - Reactivity
+    const reactivityHazard = document.getElementById('id_reactivity_hazard');
+    const reactivityHazardNotesContainer = document.getElementById('reactivity_hazard_notes_container');
+
+    function toggleReactivityHazardNotes() {
+        if (reactivityHazard && reactivityHazard.value === 'other') {
+            reactivityHazardNotesContainer.style.display = 'block';
+        } else {
+            reactivityHazardNotesContainer.style.display = 'none';
+        }
+    }
+
+    if (reactivityHazard) {
+        reactivityHazard.addEventListener('change', toggleReactivityHazardNotes);
+        toggleReactivityHazardNotes(); // Initial check
+    }
+
+    // Hazard Notes - Dose Rate
+    const doseRateHazard = document.getElementById('id_dose_rate_hazard');
+    const doseRateHazardNotesContainer = document.getElementById('dose_rate_hazard_notes_container');
+
+    function toggleDoseRateHazardNotes() {
+        if (doseRateHazard && doseRateHazard.value === 'other') {
+            doseRateHazardNotesContainer.style.display = 'block';
+        } else {
+            doseRateHazardNotesContainer.style.display = 'none';
+        }
+    }
+
+    if (doseRateHazard) {
+        doseRateHazard.addEventListener('change', toggleDoseRateHazardNotes);
+        toggleDoseRateHazardNotes(); // Initial check
+    }
+
+    // Hazard Notes - Reactor Equipment
+    const reactorEquipmentHazard = document.getElementById('id_reactor_equipment_hazard');
+    const reactorEquipmentHazardNotesContainer = document.getElementById('reactor_equipment_hazard_notes_container');
+
+    function toggleReactorEquipmentHazardNotes() {
+        if (reactorEquipmentHazard && reactorEquipmentHazard.value === 'other') {
+            reactorEquipmentHazardNotesContainer.style.display = 'block';
+        } else {
+            reactorEquipmentHazardNotesContainer.style.display = 'none';
+        }
+    }
+
+    if (reactorEquipmentHazard) {
+        reactorEquipmentHazard.addEventListener('change', toggleReactorEquipmentHazardNotes);
+        toggleReactorEquipmentHazardNotes(); // Initial check
+    }
+
+    // Hazard Notes - Other
+    const otherHazard = document.getElementById('id_other_hazard');
+    const otherHazardNotesContainer = document.getElementById('other_hazard_notes_container');
+
+    function toggleOtherHazardNotes() {
+        if (otherHazard && otherHazard.value === 'other') {
+            otherHazardNotesContainer.style.display = 'block';
+        } else {
+            otherHazardNotesContainer.style.display = 'none';
+        }
+    }
+
+    if (otherHazard) {
+        otherHazard.addEventListener('change', toggleOtherHazardNotes);
+        toggleOtherHazardNotes(); // Initial check
+    }
+
     // ==================================
     // 2. AUTO-GROWING TEXTAREAS
     // ==================================
@@ -670,5 +769,21 @@ document.addEventListener('DOMContentLoaded', function() {
     setupAutocomplete('id_dose_rate_reference_irf', 'dose_rate_autocomplete');
     setupAutocomplete('id_reactivity_reference_irf', 'reactivity_autocomplete');
 });
+
+// ==================================
+// PDF VIEWER TOGGLE (Outside DOMContentLoaded for inline onclick)
+// ==================================
+function togglePDFViewer() {
+    const viewer = document.getElementById('pdfViewerContainer');
+    const toggleText = document.getElementById('viewerToggleText');
+
+    if (viewer.style.display === 'none') {
+        viewer.style.display = 'block';
+        toggleText.textContent = 'Hide';
+    } else {
+        viewer.style.display = 'none';
+        toggleText.textContent = 'View';
+    }
+}
 </script>
 {% endblock %}
