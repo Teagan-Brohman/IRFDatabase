@@ -357,8 +357,8 @@ class ComboSampleListView(ListView):
     def get_queryset(self):
         """Filter to show only combo samples"""
         queryset = Sample.objects.filter(is_combo=True).annotate(
-            num_irradiations=Count('irradiation_logs'),
-            num_components=Count('combo_components')
+            num_irradiations=Count('irradiation_logs', distinct=True),
+            num_components=Count('combo_components', distinct=True)
         )
 
         # Search functionality
