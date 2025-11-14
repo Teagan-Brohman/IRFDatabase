@@ -9,8 +9,8 @@ class IRFForm(forms.ModelForm):
     # Multiple selection for irradiation locations
     irradiation_locations = forms.MultipleChoiceField(
         choices=[
-            ('bare_rabbit_tube', 'Bare Rabbit Tube'),
-            ('cadmium_rabbit_tube', 'Cadmium Rabbit Tube'),
+            ('bare_rabbit', 'Bare Rabbit'),
+            ('cad_rabbit', 'Cad Rabbit'),
             ('beam_port', 'Beam Port'),
             ('thermal_column', 'Thermal Column'),
         ],
@@ -202,8 +202,8 @@ class SampleLogForm(forms.ModelForm):
 
             # Map location codes to display names
             location_map = {
-                'bare_rabbit_tube': 'Bare Rabbit Tube',
-                'cadmium_rabbit_tube': 'Cadmium Rabbit Tube',
+                'bare_rabbit': 'Bare Rabbit',
+                'cad_rabbit': 'Cad Rabbit',
                 'beam_port': 'Beam Port',
                 'thermal_column': 'Thermal Column',
                 'other': 'Other',
