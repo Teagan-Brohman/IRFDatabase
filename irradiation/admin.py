@@ -320,10 +320,13 @@ class SampleAdmin(admin.ModelAdmin):
     inlines = []
 
     def get_inlines(self, request, obj=None):
-        """Show component inline only for combo samples"""
+        """Show appropriate inlines based on sample type"""
         if obj and obj.is_combo:
+            # Combo samples: show components
             return [SampleComponentInline]
-        return []
+        else:
+            # Base samples: show composition
+            return [SampleCompositionInline]
 
     def mass_display(self, obj):
         """Display mass with unit"""
@@ -568,11 +571,6 @@ class SampleCompositionInline(admin.TabularInline):
     fields = ['element', 'isotope', 'fraction', 'composition_type', 'order']
     verbose_name = 'Composition Element'
     verbose_name_plural = 'Elemental Composition'
-
-
-# Update SampleAdmin to include composition inline
-# Modify the existing SampleAdmin.inlines
-SampleAdmin.inlines = [SampleCompositionInline]
 
 
 @admin.register(ActivationResult)
