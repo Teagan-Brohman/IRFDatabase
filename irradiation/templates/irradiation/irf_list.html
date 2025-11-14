@@ -104,6 +104,7 @@
                         <thead class="table-light">
                             <tr>
                                 <th>IRF Number</th>
+                                <th>Version</th>
                                 <th>Sample Description</th>
                                 <th>Status</th>
                                 <th>Limits</th>
@@ -117,6 +118,9 @@
                                 <tr>
                                     <td>
                                         <strong>{{ irf.irf_number }}</strong>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-info">v{{ irf.version_number }}</span>
                                     </td>
                                     <td>
                                         {{ irf.sample_description|truncatewords:8 }}

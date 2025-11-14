@@ -26,16 +26,22 @@ class IRFListView(ListView):
 
         # Subquery to count all logs across all versions with the same irf_number
         from django.db.models.functions import Coalesce
+        from django.db.models import IntegerField
+
+        # Simpler subquery that counts logs for all versions with same irf_number
         logs_count = SampleIrradiationLog.objects.filter(
             irf__irf_number=OuterRef('irf_number')
         ).values('irf__irf_number').annotate(
-            count=Count('id')
-        ).values('count')
+            total=Count('id', distinct=True)
+        ).values('total')[:1]  # Limit to 1 to ensure scalar result
 
         queryset = IrradiationRequestForm.objects.filter(
             amendments__isnull=True  # No amendments means this is the latest version
         ).annotate(
-            num_logs=Coalesce(Subquery(logs_count), 0)
+            num_logs=Coalesce(
+                Subquery(logs_count, output_field=IntegerField()),
+                0
+            )
         )
 
         # Search functionality
