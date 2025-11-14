@@ -364,7 +364,7 @@ class FluxConfigurationAdminForm(forms.ModelForm):
 
     # Thermal flux scientific notation fields
     thermal_flux_mantissa = forms.DecimalField(
-        required=False,
+        required=True,
         max_digits=5,
         decimal_places=2,
         initial=1.0,
@@ -372,7 +372,7 @@ class FluxConfigurationAdminForm(forms.ModelForm):
         help_text="e.g., 2.5 for 2.5×10ⁿ"
     )
     thermal_flux_exponent = forms.IntegerField(
-        required=False,
+        required=True,
         initial=12,
         label="×10^",
         help_text="e.g., 12 for ×10¹²"
@@ -380,7 +380,7 @@ class FluxConfigurationAdminForm(forms.ModelForm):
 
     # Fast flux scientific notation fields
     fast_flux_mantissa = forms.DecimalField(
-        required=False,
+        required=True,
         max_digits=5,
         decimal_places=2,
         initial=1.0,
@@ -388,7 +388,7 @@ class FluxConfigurationAdminForm(forms.ModelForm):
         help_text="e.g., 5.0 for 5.0×10ⁿ"
     )
     fast_flux_exponent = forms.IntegerField(
-        required=False,
+        required=True,
         initial=11,
         label="×10^",
         help_text="e.g., 11 for ×10¹¹"
