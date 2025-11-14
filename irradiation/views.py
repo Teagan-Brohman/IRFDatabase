@@ -1,6 +1,6 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.views.generic import ListView, DetailView, CreateView, UpdateView, DeleteView
-from django.db.models import Q, Count, F
+from django.db.models import Q, Count, F, OuterRef, Subquery
 from django.urls import reverse_lazy
 from django.http import JsonResponse
 from django.contrib import messages
@@ -23,10 +23,19 @@ class IRFListView(ListView):
         """Filter IRFs based on search query - show only latest versions"""
         # Exclude IRFs that have been amended (i.e., have child amendments)
         # This ensures only the latest version of each IRF is shown
+
+        # Subquery to count all logs across all versions with the same irf_number
+        from django.db.models.functions import Coalesce
+        logs_count = SampleIrradiationLog.objects.filter(
+            irf__irf_number=OuterRef('irf_number')
+        ).values('irf__irf_number').annotate(
+            count=Count('id')
+        ).values('count')
+
         queryset = IrradiationRequestForm.objects.filter(
             amendments__isnull=True  # No amendments means this is the latest version
         ).annotate(
-            num_logs=Count('irradiation_logs', distinct=True)
+            num_logs=Coalesce(Subquery(logs_count), 0)
         )
 
         # Search functionality
@@ -89,8 +98,9 @@ class IRFDetailView(DetailView):
         """Add sample logs and version history to context"""
         context = super().get_context_data(**kwargs)
 
-        # Get all sample logs ordered by date (most recent first), then by time
-        all_logs = self.object.irradiation_logs.all().order_by('-irradiation_date', '-time_in')
+        # Get all sample logs from this IRF and all its version history
+        # This ensures amended IRFs show logs from previous versions too
+        all_logs = self.object.get_all_irradiation_logs().order_by('-irradiation_date', '-time_in')
 
         # Group logs by date
         logs_by_date = OrderedDict()
