@@ -157,7 +157,8 @@ class SampleLogForm(forms.ModelForm):
         fields = [
             'irf',
             'irradiation_date',
-            'sample_id',
+            'sample',
+            'sample_id_text',
             'experimenter_name',
             'actual_location',
             'actual_power',

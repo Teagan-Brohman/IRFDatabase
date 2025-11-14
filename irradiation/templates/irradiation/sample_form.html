@@ -1,0 +1,181 @@
+{% extends 'irradiation/base.html' %}
+
+{% block title %}{% if object %}Edit{% else %}New{% endif %} Base Sample - IRF Database{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col">
+            <h1>
+                <i class="bi bi-box"></i>
+                {% if object %}
+                    Edit Base Sample: {{ object.sample_id }}
+                {% else %}
+                    New Base Sample
+                {% endif %}
+            </h1>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-body">
+                    <form method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+
+                        <div class="mb-3">
+                            <label for="{{ form.sample_id.id_for_label }}" class="form-label">
+                                Sample ID <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" class="form-control {% if form.sample_id.errors %}is-invalid{% endif %}"
+                                   id="{{ form.sample_id.id_for_label }}"
+                                   name="{{ form.sample_id.name }}"
+                                   value="{{ form.sample_id.value|default:'' }}"
+                                   required>
+                            <div class="form-text">Unique identifier (will be converted to uppercase, case-insensitive)</div>
+                            {% if form.sample_id.errors %}
+                                <div class="invalid-feedback">{{ form.sample_id.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="{{ form.name.id_for_label }}" class="form-label">Name</label>
+                            <input type="text" class="form-control {% if form.name.errors %}is-invalid{% endif %}"
+                                   id="{{ form.name.id_for_label }}"
+                                   name="{{ form.name.name }}"
+                                   value="{{ form.name.value|default:'' }}">
+                            <div class="form-text">Descriptive name for the sample</div>
+                            {% if form.name.errors %}
+                                <div class="invalid-feedback">{{ form.name.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="{{ form.material_type.id_for_label }}" class="form-label">Material Type</label>
+                            <input type="text" class="form-control {% if form.material_type.errors %}is-invalid{% endif %}"
+                                   id="{{ form.material_type.id_for_label }}"
+                                   name="{{ form.material_type.name }}"
+                                   value="{{ form.material_type.value|default:'' }}"
+                                   placeholder="e.g., Aluminum, Copper, Gold">
+                            <div class="form-text">Material composition</div>
+                            {% if form.material_type.errors %}
+                                <div class="invalid-feedback">{{ form.material_type.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="{{ form.physical_form.id_for_label }}" class="form-label">Physical Form</label>
+                            <select class="form-select {% if form.physical_form.errors %}is-invalid{% endif %}"
+                                    id="{{ form.physical_form.id_for_label }}"
+                                    name="{{ form.physical_form.name }}">
+                                <option value="">---------</option>
+                                {% for value, label in form.physical_form.field.choices %}
+                                    {% if value %}
+                                        <option value="{{ value }}" {% if form.physical_form.value == value %}selected{% endif %}>
+                                            {{ label }}
+                                        </option>
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                            {% if form.physical_form.errors %}
+                                <div class="invalid-feedback">{{ form.physical_form.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.mass.id_for_label }}" class="form-label">Mass</label>
+                                <input type="number" step="0.001" class="form-control {% if form.mass.errors %}is-invalid{% endif %}"
+                                       id="{{ form.mass.id_for_label }}"
+                                       name="{{ form.mass.name }}"
+                                       value="{{ form.mass.value|default:'' }}">
+                                {% if form.mass.errors %}
+                                    <div class="invalid-feedback">{{ form.mass.errors.0 }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.mass_unit.id_for_label }}" class="form-label">Unit</label>
+                                <select class="form-select {% if form.mass_unit.errors %}is-invalid{% endif %}"
+                                        id="{{ form.mass_unit.id_for_label }}"
+                                        name="{{ form.mass_unit.name }}">
+                                    {% for value, label in form.mass_unit.field.choices %}
+                                        <option value="{{ value }}" {% if form.mass_unit.value == value or value == 'g' and not form.mass_unit.value %}selected{% endif %}>
+                                            {{ label }}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                                {% if form.mass_unit.errors %}
+                                    <div class="invalid-feedback">{{ form.mass_unit.errors.0 }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="{{ form.dimensions.id_for_label }}" class="form-label">Dimensions</label>
+                            <input type="text" class="form-control {% if form.dimensions.errors %}is-invalid{% endif %}"
+                                   id="{{ form.dimensions.id_for_label }}"
+                                   name="{{ form.dimensions.name }}"
+                                   value="{{ form.dimensions.value|default:'' }}"
+                                   placeholder="e.g., 2cm x 3cm x 0.1mm">
+                            <div class="form-text">Physical dimensions</div>
+                            {% if form.dimensions.errors %}
+                                <div class="invalid-feedback">{{ form.dimensions.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="{{ form.description.id_for_label }}" class="form-label">Description</label>
+                            <textarea class="form-control {% if form.description.errors %}is-invalid{% endif %}"
+                                      id="{{ form.description.id_for_label }}"
+                                      name="{{ form.description.name }}"
+                                      rows="3">{{ form.description.value|default:'' }}</textarea>
+                            <div class="form-text">Detailed description of the sample</div>
+                            {% if form.description.errors %}
+                                <div class="invalid-feedback">{{ form.description.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="{{ form.notes.id_for_label }}" class="form-label">Notes</label>
+                            <textarea class="form-control {% if form.notes.errors %}is-invalid{% endif %}"
+                                      id="{{ form.notes.id_for_label }}"
+                                      name="{{ form.notes.name }}"
+                                      rows="3">{{ form.notes.value|default:'' }}</textarea>
+                            <div class="form-text">Additional notes</div>
+                            {% if form.notes.errors %}
+                                <div class="invalid-feedback">{{ form.notes.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle"></i>
+                                {% if object %}Update{% else %}Create{% endif %} Sample
+                            </button>
+                            <a href="{% if object %}{% url 'irradiation:sample_detail' object.pk %}{% else %}{% url 'irradiation:sample_list' %}{% endif %}"
+                               class="btn btn-secondary">
+                                <i class="bi bi-x-circle"></i> Cancel
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="bi bi-info-circle"></i> Tips</h5>
+                    <ul class="small mb-0">
+                        <li>Sample ID is required and must be unique</li>
+                        <li>Sample IDs are case-insensitive (automatically converted to uppercase)</li>
+                        <li>Fill in as much information as possible for better tracking</li>
+                        <li>Base samples can be combined into combo samples later</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

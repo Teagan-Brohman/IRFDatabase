@@ -18,6 +18,15 @@ urlpatterns = [
     path('sample-log/<int:pk>/edit/', views.SampleLogUpdateView.as_view(), name='sample_log_update'),
     path('sample-log/<int:pk>/delete/', views.SampleLogDeleteView.as_view(), name='sample_log_delete'),
 
+    # Sample views
+    path('samples/', views.SampleListView.as_view(), name='sample_list'),
+    path('samples/combo/', views.ComboSampleListView.as_view(), name='combo_sample_list'),
+    path('sample/<int:pk>/', views.SampleDetailView.as_view(), name='sample_detail'),
+    path('sample/new/', views.SampleCreateView.as_view(), name='sample_create'),
+    path('sample/<int:pk>/edit/', views.SampleUpdateView.as_view(), name='sample_update'),
+    path('sample/combo/new/', views.ComboSampleCreateView.as_view(), name='combo_sample_create'),
+
     # API endpoints
     path('api/irf-autocomplete/', views.irf_autocomplete, name='irf_autocomplete'),
+    path('api/sample-autocomplete/', views.sample_autocomplete, name='sample_autocomplete'),
 ]

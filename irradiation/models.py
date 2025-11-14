@@ -375,6 +375,184 @@ class IrradiationRequestForm(models.Model):
         return not self.has_amendments()
 
 
+class Sample(models.Model):
+    """
+    Represents an individual sample that can be irradiated
+    Samples can be base samples (e.g., aluminum foil, copper wire)
+    or combo samples (combinations of multiple base samples)
+    """
+
+    # Sample Identification (case-insensitive)
+    sample_id = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text="Unique sample identifier (case-insensitive)"
+    )
+
+    # Basic Information
+    name = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Descriptive name for the sample"
+    )
+    description = models.TextField(
+        blank=True,
+        help_text="Detailed description of the sample"
+    )
+
+    # Sample Properties
+    material_type = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Material composition (e.g., Aluminum, Copper, Gold, etc.)"
+    )
+
+    PHYSICAL_FORM_CHOICES = [
+        ('powder', 'Powder'),
+        ('ash', 'Ash'),
+        ('liquid', 'Liquid'),
+        ('solid', 'Solid'),
+        ('foil', 'Foil'),
+        ('pellet', 'Pellet'),
+        ('wire', 'Wire'),
+        ('other', 'Other'),
+    ]
+    physical_form = models.CharField(
+        max_length=50,
+        choices=PHYSICAL_FORM_CHOICES,
+        blank=True,
+        help_text="Physical form of the sample"
+    )
+
+    # Measurements
+    MASS_UNIT_CHOICES = [
+        ('g', 'grams (g)'),
+        ('kg', 'kilograms (kg)'),
+        ('mg', 'milligrams (mg)'),
+    ]
+    mass = models.DecimalField(
+        max_digits=10,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+        help_text="Sample mass"
+    )
+    mass_unit = models.CharField(
+        max_length=10,
+        choices=MASS_UNIT_CHOICES,
+        default='g',
+        blank=True
+    )
+
+    dimensions = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Physical dimensions (e.g., '2cm x 3cm x 0.1mm')"
+    )
+
+    # Sample Type
+    is_combo = models.BooleanField(
+        default=False,
+        help_text="True if this is a combination of multiple base samples"
+    )
+
+    # Tracking
+    created_date = models.DateField(
+        auto_now_add=True,
+        help_text="Date sample was added to database"
+    )
+    updated_date = models.DateField(auto_now=True)
+
+    notes = models.TextField(
+        blank=True,
+        help_text="Additional notes about this sample"
+    )
+
+    class Meta:
+        ordering = ['sample_id']
+        verbose_name = 'Sample'
+        verbose_name_plural = 'Samples'
+
+    def __str__(self):
+        if self.name:
+            return f"{self.sample_id} - {self.name}"
+        return self.sample_id
+
+    def save(self, *args, **kwargs):
+        """Ensure sample_id is stored in uppercase for case-insensitive uniqueness"""
+        self.sample_id = self.sample_id.upper()
+        super().save(*args, **kwargs)
+
+    def get_absolute_url(self):
+        return reverse('irradiation:sample_detail', kwargs={'pk': self.pk})
+
+    def get_components(self):
+        """Get list of component samples if this is a combo"""
+        if not self.is_combo:
+            return []
+        return [sc.component_sample for sc in self.combo_components.all().order_by('order')]
+
+    def get_irradiation_logs(self):
+        """Get all irradiation logs for this sample (direct or as part of combo)"""
+        # Direct irradiations
+        direct_logs = self.irradiation_logs.all()
+
+        # If this is a base sample, also get logs where it was part of a combo
+        if not self.is_combo:
+            combo_logs = SampleIrradiationLog.objects.filter(
+                sample__combo_components__component_sample=self
+            ).distinct()
+            # Combine querysets
+            from django.db.models import Q
+            all_log_ids = list(direct_logs.values_list('id', flat=True)) + \
+                         list(combo_logs.values_list('id', flat=True))
+            return SampleIrradiationLog.objects.filter(id__in=all_log_ids).distinct()
+
+        return direct_logs
+
+    def total_irradiations(self):
+        """Count total irradiations this sample has been through"""
+        return self.get_irradiation_logs().count()
+
+
+class SampleComponent(models.Model):
+    """
+    Through model linking combo samples to their component base samples
+    Allows tracking which base samples make up a combo sample
+    """
+
+    combo_sample = models.ForeignKey(
+        Sample,
+        on_delete=models.CASCADE,
+        related_name='combo_components',
+        limit_choices_to={'is_combo': True},
+        help_text="The combo sample"
+    )
+
+    component_sample = models.ForeignKey(
+        Sample,
+        on_delete=models.CASCADE,
+        related_name='used_in_combos',
+        limit_choices_to={'is_combo': False},
+        help_text="A base sample that is part of this combo"
+    )
+
+    order = models.IntegerField(
+        default=0,
+        help_text="Order of this component in the combo (for display purposes)"
+    )
+
+    class Meta:
+        ordering = ['combo_sample', 'order']
+        verbose_name = 'Sample Component'
+        verbose_name_plural = 'Sample Components'
+        unique_together = ['combo_sample', 'component_sample']
+
+    def __str__(self):
+        return f"{self.combo_sample.sample_id} contains {self.component_sample.sample_id}"
+
+
 class SampleIrradiationLog(models.Model):
     """
     Individual sample irradiation log entry
@@ -390,15 +568,25 @@ class SampleIrradiationLog(models.Model):
         help_text="Associated Irradiation Request Form"
     )
 
+    # Link to Sample (optional, for new entries)
+    sample = models.ForeignKey(
+        Sample,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='irradiation_logs',
+        help_text="Link to sample in database (optional, for tracking)"
+    )
+
     # 1. Date
     irradiation_date = models.DateField(
         help_text="Date of sample irradiation"
     )
 
-    # 2. Sample ID
-    sample_id = models.CharField(
+    # 2. Sample ID (text field for backward compatibility with historical data)
+    sample_id_text = models.CharField(
         max_length=100,
-        help_text="Sample identification number or name"
+        help_text="Sample identification number or name (text-based, for historical records)"
     )
 
     # 3. Experimenter's Name
@@ -493,7 +681,12 @@ class SampleIrradiationLog(models.Model):
         verbose_name_plural = 'Sample Irradiation Logs'
 
     def __str__(self):
-        return f"{self.sample_id} - {self.irradiation_date} ({self.irf.irf_number})"
+        sample_display = self.sample.sample_id if self.sample else self.sample_id_text
+        return f"{sample_display} - {self.irradiation_date} ({self.irf.irf_number})"
+
+    def get_sample_id(self):
+        """Get the sample ID, preferring linked Sample over text field"""
+        return self.sample.sample_id if self.sample else self.sample_id_text
 
     def fluence(self):
         """Calculate total fluence (kW-hrs)"""

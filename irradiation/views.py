@@ -1,10 +1,11 @@
-from django.shortcuts import render, get_object_or_404
+from django.shortcuts import render, get_object_or_404, redirect
 from django.views.generic import ListView, DetailView, CreateView, UpdateView, DeleteView
 from django.db.models import Q, Count
 from django.urls import reverse_lazy
 from django.http import JsonResponse
+from django.contrib import messages
 from collections import OrderedDict
-from .models import IrradiationRequestForm, SampleIrradiationLog
+from .models import IrradiationRequestForm, SampleIrradiationLog, Sample, SampleComponent
 from .forms import IRFForm, SampleLogForm
 
 
@@ -287,6 +288,237 @@ def irf_autocomplete(request):
             'url': irf.get_absolute_url(),
         }
         for irf in irfs
+    ]
+
+    return JsonResponse({'results': results})
+
+
+# ========================================
+# SAMPLE VIEWS
+# ========================================
+
+class SampleListView(ListView):
+    """List view for base samples (non-combo)"""
+    model = Sample
+    template_name = 'irradiation/sample_list.html'
+    context_object_name = 'samples'
+    paginate_by = 50
+
+    def get_queryset(self):
+        """Filter to show only base samples"""
+        queryset = Sample.objects.filter(is_combo=False).annotate(
+            num_irradiations=Count('irradiation_logs')
+        )
+
+        # Search functionality
+        query = self.request.GET.get('q', '')
+        if query:
+            queryset = queryset.filter(
+                Q(sample_id__icontains=query) |
+                Q(name__icontains=query) |
+                Q(material_type__icontains=query) |
+                Q(description__icontains=query)
+            )
+
+        # Material type filter
+        material = self.request.GET.get('material', '')
+        if material:
+            queryset = queryset.filter(material_type__icontains=material)
+
+        # Physical form filter
+        physical_form = self.request.GET.get('physical_form', '')
+        if physical_form:
+            queryset = queryset.filter(physical_form=physical_form)
+
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['search_query'] = self.request.GET.get('q', '')
+        context['selected_material'] = self.request.GET.get('material', '')
+        context['selected_physical_form'] = self.request.GET.get('physical_form', '')
+        context['physical_form_choices'] = Sample.PHYSICAL_FORM_CHOICES
+
+        # Get unique material types for filter
+        context['available_materials'] = Sample.objects.filter(is_combo=False).exclude(
+            material_type=''
+        ).values_list('material_type', flat=True).distinct().order_by('material_type')
+
+        return context
+
+
+class ComboSampleListView(ListView):
+    """List view for combo samples"""
+    model = Sample
+    template_name = 'irradiation/combo_sample_list.html'
+    context_object_name = 'samples'
+    paginate_by = 50
+
+    def get_queryset(self):
+        """Filter to show only combo samples"""
+        queryset = Sample.objects.filter(is_combo=True).annotate(
+            num_irradiations=Count('irradiation_logs'),
+            num_components=Count('combo_components')
+        )
+
+        # Search functionality
+        query = self.request.GET.get('q', '')
+        if query:
+            queryset = queryset.filter(
+                Q(sample_id__icontains=query) |
+                Q(name__icontains=query) |
+                Q(description__icontains=query)
+            )
+
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['search_query'] = self.request.GET.get('q', '')
+        return context
+
+
+class SampleDetailView(DetailView):
+    """Detail view for a sample showing irradiation history"""
+    model = Sample
+    template_name = 'irradiation/sample_detail.html'
+    context_object_name = 'sample'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        # Get all irradiation logs for this sample
+        logs = self.object.get_irradiation_logs().order_by('-irradiation_date', '-time_in')
+        context['irradiation_logs'] = logs
+
+        # If combo, get components
+        if self.object.is_combo:
+            context['components'] = self.object.get_components()
+
+        # If base sample, get combos this sample is part of
+        if not self.object.is_combo:
+            context['used_in_combos'] = Sample.objects.filter(
+                combo_components__component_sample=self.object
+            ).distinct()
+
+        return context
+
+
+class SampleCreateView(CreateView):
+    """Create a new base sample"""
+    model = Sample
+    template_name = 'irradiation/sample_form.html'
+    fields = [
+        'sample_id', 'name', 'description', 'material_type',
+        'physical_form', 'mass', 'mass_unit', 'dimensions', 'notes'
+    ]
+
+    def form_valid(self, form):
+        # Ensure is_combo is False for base samples
+        form.instance.is_combo = False
+        messages.success(self.request, f'Sample {form.instance.sample_id} created successfully.')
+        return super().form_valid(form)
+
+
+class SampleUpdateView(UpdateView):
+    """Update an existing sample"""
+    model = Sample
+    template_name = 'irradiation/sample_form.html'
+    fields = [
+        'sample_id', 'name', 'description', 'material_type',
+        'physical_form', 'mass', 'mass_unit', 'dimensions', 'notes'
+    ]
+
+    def form_valid(self, form):
+        messages.success(self.request, f'Sample {form.instance.sample_id} updated successfully.')
+        return super().form_valid(form)
+
+
+class ComboSampleCreateView(CreateView):
+    """Create a new combo sample with component selection and duplicate detection"""
+    model = Sample
+    template_name = 'irradiation/combo_sample_form.html'
+    fields = ['sample_id', 'name', 'description', 'notes']
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Get all base samples for component selection
+        context['base_samples'] = Sample.objects.filter(is_combo=False).order_by('sample_id')
+        return context
+
+    def form_valid(self, form):
+        # Get selected component IDs from POST
+        component_ids = self.request.POST.getlist('components')
+
+        if not component_ids:
+            messages.error(self.request, 'Please select at least one component sample.')
+            return self.form_invalid(form)
+
+        # Check for duplicate combo (same set of components)
+        duplicate = self._find_duplicate_combo(component_ids)
+        if duplicate:
+            messages.warning(
+                self.request,
+                f'A combo with these exact components already exists: {duplicate.sample_id}'
+            )
+            return redirect('irradiation:sample_detail', pk=duplicate.pk)
+
+        # Create the combo sample
+        form.instance.is_combo = True
+        response = super().form_valid(form)
+
+        # Add components
+        for order, component_id in enumerate(component_ids):
+            component = Sample.objects.get(pk=component_id)
+            SampleComponent.objects.create(
+                combo_sample=self.object,
+                component_sample=component,
+                order=order
+            )
+
+        messages.success(
+            self.request,
+            f'Combo sample {self.object.sample_id} created with {len(component_ids)} components.'
+        )
+        return response
+
+    def _find_duplicate_combo(self, component_ids):
+        """Find existing combo with exact same set of components"""
+        component_ids = set(map(int, component_ids))
+
+        # Get all combo samples
+        for combo in Sample.objects.filter(is_combo=True):
+            existing_ids = set(combo.combo_components.values_list('component_sample_id', flat=True))
+            if existing_ids == component_ids:
+                return combo
+        return None
+
+
+def sample_autocomplete(request):
+    """
+    API endpoint for sample ID autocomplete
+    Returns matching samples with basic info
+    """
+    query = request.GET.get('q', '').strip().upper()
+
+    if len(query) < 1:
+        return JsonResponse({'results': []})
+
+    samples = Sample.objects.filter(
+        sample_id__icontains=query
+    )[:10]
+
+    results = [
+        {
+            'sample_id': sample.sample_id,
+            'name': sample.name,
+            'material_type': sample.material_type,
+            'is_combo': sample.is_combo,
+            'num_components': sample.combo_components.count() if sample.is_combo else 0,
+            'components': [c.sample_id for c in sample.get_components()] if sample.is_combo else [],
+            'url': sample.get_absolute_url(),
+        }
+        for sample in samples
     ]
 
     return JsonResponse({'results': results})
