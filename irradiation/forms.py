@@ -226,3 +226,21 @@ class SampleLogForm(forms.ModelForm):
                     label='Location',
                     help_text='Select from IRF-approved locations'
                 )
+
+        # Make both sample fields optional in form (we'll validate in clean())
+        self.fields['sample'].required = False
+        self.fields['sample_id_text'].required = False
+
+    def clean(self):
+        """Validate that at least one sample identifier is provided"""
+        cleaned_data = super().clean()
+        sample = cleaned_data.get('sample')
+        sample_id_text = cleaned_data.get('sample_id_text')
+
+        # At least one must be provided
+        if not sample and not sample_id_text:
+            raise forms.ValidationError(
+                'Either select a sample from the database or provide a sample ID in the text field.'
+            )
+
+        return cleaned_data

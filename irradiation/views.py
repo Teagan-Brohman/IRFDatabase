@@ -416,8 +416,30 @@ class SampleCreateView(CreateView):
     def form_valid(self, form):
         # Ensure is_combo is False for base samples
         form.instance.is_combo = False
+        response = super().form_valid(form)
+
+        # Handle AJAX requests (from quick add modal)
+        if self.request.headers.get('X-Requested-With') == 'XMLHttpRequest' or \
+           self.request.content_type == 'application/x-www-form-urlencoded':
+            return JsonResponse({
+                'success': True,
+                'sample_id': self.object.sample_id,
+                'sample_pk': self.object.pk,
+                'url': self.object.get_absolute_url()
+            })
+
         messages.success(self.request, f'Sample {form.instance.sample_id} created successfully.')
-        return super().form_valid(form)
+        return response
+
+    def form_invalid(self, form):
+        # Handle AJAX requests
+        if self.request.headers.get('X-Requested-With') == 'XMLHttpRequest' or \
+           self.request.content_type == 'application/x-www-form-urlencoded':
+            return JsonResponse({
+                'success': False,
+                'errors': form.errors
+            }, status=400)
+        return super().form_invalid(form)
 
 
 class SampleUpdateView(UpdateView):
