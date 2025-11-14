@@ -18,7 +18,7 @@
 
             <div class="card">
                 <div class="card-body">
-                    <form method="post">
+                    <form method="post" id="sampleLogForm">
                         {% csrf_token %}
 
                         {% if form.non_field_errors %}
@@ -28,7 +28,45 @@
                         {% endif %}
 
                         {% for field in form %}
-                            {% if field.name == 'total_time' %}
+                            {% if field.name == 'sample' %}
+                                {# Special handling for sample field with autocomplete #}
+                                <div class="mb-3">
+                                    <label for="sampleSearch" class="form-label">
+                                        Sample (from database)
+                                    </label>
+                                    <div class="input-group">
+                                        <input type="text" class="form-control" id="sampleSearch"
+                                               placeholder="Search for sample ID..." autocomplete="off">
+                                        <button class="btn btn-outline-secondary" type="button" id="addSampleBtn"
+                                                data-bs-toggle="modal" data-bs-target="#addSampleModal">
+                                            <i class="bi bi-plus-circle"></i> Add New
+                                        </button>
+                                    </div>
+                                    <input type="hidden" name="sample" id="sampleIdField" value="{{ field.value|default:'' }}">
+                                    <div id="sampleResults" class="list-group mt-2" style="display: none; max-height: 200px; overflow-y: auto;"></div>
+                                    <div id="selectedSampleDisplay" class="mt-2"></div>
+                                    <small class="form-text text-muted d-block">Search and select a sample from the database, or leave blank to use text field below</small>
+                                </div>
+
+                            {% elif field.name == 'sample_id_text' %}
+                                {# Text fallback for sample ID #}
+                                <div class="mb-3">
+                                    <label for="{{ field.id_for_label }}" class="form-label">
+                                        Sample ID (text)
+                                        {% if field.field.required %}
+                                            <span class="text-danger">*</span>
+                                        {% endif %}
+                                    </label>
+                                    {{ field }}
+                                    <small class="form-text text-muted d-block">For samples not yet in database, or historical records</small>
+                                    {% if field.errors %}
+                                        <div class="text-danger small mt-1">
+                                            {{ field.errors }}
+                                        </div>
+                                    {% endif %}
+                                </div>
+
+                            {% elif field.name == 'total_time' %}
                                 {# Special inline layout for total_time and total_time_unit #}
                                 <div class="mb-3">
                                     <label class="form-label">
@@ -147,6 +185,63 @@
         </div>
     </div>
 </div>
+
+<!-- Add Sample Modal -->
+<div class="modal fade" id="addSampleModal" tabindex="-1" aria-labelledby="addSampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addSampleModalLabel">
+                    <i class="bi bi-box"></i> Add New Base Sample
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="quickAddSampleForm">
+                    <div class="mb-3">
+                        <label for="quickSampleId" class="form-label">
+                            Sample ID <span class="text-danger">*</span>
+                        </label>
+                        <input type="text" class="form-control" id="quickSampleId" required>
+                        <small class="form-text text-muted">Will be converted to uppercase</small>
+                    </div>
+                    <div class="mb-3">
+                        <label for="quickSampleName" class="form-label">Name</label>
+                        <input type="text" class="form-control" id="quickSampleName">
+                    </div>
+                    <div class="mb-3">
+                        <label for="quickSampleMaterial" class="form-label">Material Type</label>
+                        <input type="text" class="form-control" id="quickSampleMaterial" placeholder="e.g., Aluminum, Copper">
+                    </div>
+                    <div class="mb-3">
+                        <label for="quickSampleForm" class="form-label">Physical Form</label>
+                        <select class="form-select" id="quickSampleForm">
+                            <option value="">---------</option>
+                            <option value="powder">Powder</option>
+                            <option value="ash">Ash</option>
+                            <option value="liquid">Liquid</option>
+                            <option value="solid">Solid</option>
+                            <option value="foil">Foil</option>
+                            <option value="pellet">Pellet</option>
+                            <option value="wire">Wire</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="alert alert-info small">
+                        <i class="bi bi-info-circle"></i>
+                        This creates a base sample. For more details, edit the sample later from the Samples page.
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveQuickSample">
+                    <i class="bi bi-check-circle"></i> Create Sample
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_css %}
@@ -214,5 +309,200 @@
         outline: 0;
         box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
     }
+
+    .sample-result-item {
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+
+    .sample-result-item:hover {
+        background-color: #f8f9fa;
+    }
+
+    .combo-badge {
+        background-color: #6c757d;
+        color: white;
+        font-size: 0.75rem;
+        padding: 2px 6px;
+        border-radius: 3px;
+    }
 </style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let searchTimeout;
+    const sampleSearch = document.getElementById('sampleSearch');
+    const sampleResults = document.getElementById('sampleResults');
+    const sampleIdField = document.getElementById('sampleIdField');
+    const selectedSampleDisplay = document.getElementById('selectedSampleDisplay');
+
+    // Sample autocomplete
+    sampleSearch.addEventListener('input', function() {
+        clearTimeout(searchTimeout);
+        const query = this.value.trim();
+
+        if (query.length < 1) {
+            sampleResults.style.display = 'none';
+            return;
+        }
+
+        searchTimeout = setTimeout(() => {
+            fetch(`{% url 'irradiation:sample_autocomplete' %}?q=${encodeURIComponent(query)}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.results.length === 0) {
+                        sampleResults.innerHTML = '<div class="list-group-item text-muted">No samples found</div>';
+                        sampleResults.style.display = 'block';
+                    } else {
+                        sampleResults.innerHTML = data.results.map(sample => {
+                            let badge = sample.is_combo ? '<span class="combo-badge ms-2">COMBO</span>' : '';
+                            let components = sample.is_combo ? `<br><small class="text-muted">${sample.components.join(', ')}</small>` : '';
+                            let material = sample.material_type ? `<br><small class="text-muted">${sample.material_type}</small>` : '';
+
+                            return `
+                                <a href="#" class="list-group-item list-group-item-action sample-result-item"
+                                   data-sample-id="${sample.sample_id}"
+                                   data-sample-pk="${sample.url.split('/').slice(-2, -1)[0]}"
+                                   data-is-combo="${sample.is_combo}"
+                                   data-components="${sample.is_combo ? sample.components.join(', ') : ''}">
+                                    <strong>${sample.sample_id}</strong>${badge}
+                                    ${sample.name ? ` - ${sample.name}` : ''}
+                                    ${material}
+                                    ${components}
+                                </a>
+                            `;
+                        }).join('');
+                        sampleResults.style.display = 'block';
+
+                        // Add click handlers
+                        document.querySelectorAll('.sample-result-item').forEach(item => {
+                            item.addEventListener('click', function(e) {
+                                e.preventDefault();
+                                selectSample(this);
+                            });
+                        });
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching samples:', error);
+                });
+        }, 300);
+    });
+
+    function selectSample(element) {
+        const sampleId = element.dataset.sampleId;
+        const samplePk = element.dataset.samplePk;
+        const isCombo = element.dataset.isCombo === 'true';
+        const components = element.dataset.components;
+
+        sampleIdField.value = samplePk;
+        sampleSearch.value = sampleId;
+        sampleResults.style.display = 'none';
+
+        let comboWarning = '';
+        if (isCombo) {
+            comboWarning = `
+                <div class="alert alert-warning mt-2">
+                    <i class="bi bi-info-circle"></i>
+                    <strong>Combo Sample:</strong> This irradiation will be tracked for all component samples: ${components}
+                </div>
+            `;
+        }
+
+        selectedSampleDisplay.innerHTML = `
+            <div class="alert alert-success">
+                <i class="bi bi-check-circle"></i> Selected: <strong>${sampleId}</strong>
+                <button type="button" class="btn-close float-end" onclick="clearSampleSelection()"></button>
+            </div>
+            ${comboWarning}
+        `;
+    }
+
+    function clearSampleSelection() {
+        sampleIdField.value = '';
+        sampleSearch.value = '';
+        selectedSampleDisplay.innerHTML = '';
+    }
+
+    // Quick add sample
+    document.getElementById('saveQuickSample').addEventListener('click', function() {
+        const sampleId = document.getElementById('quickSampleId').value.trim();
+        const name = document.getElementById('quickSampleName').value.trim();
+        const material = document.getElementById('quickSampleMaterial').value.trim();
+        const physicalForm = document.getElementById('quickSampleForm').value;
+
+        if (!sampleId) {
+            alert('Sample ID is required');
+            return;
+        }
+
+        // Disable button during save
+        this.disabled = true;
+        this.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Creating...';
+
+        // Create sample via AJAX
+        fetch('{% url "irradiation:sample_create" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: new URLSearchParams({
+                'sample_id': sampleId,
+                'name': name,
+                'material_type': material,
+                'physical_form': physicalForm
+            })
+        })
+        .then(response => {
+            if (response.ok) {
+                return response.json().catch(() => {
+                    // If not JSON, it's likely a redirect (success)
+                    return { success: true, sample_id: sampleId.toUpperCase() };
+                });
+            }
+            throw new Error('Failed to create sample');
+        })
+        .then(data => {
+            // Close modal
+            bootstrap.Modal.getInstance(document.getElementById('addSampleModal')).hide();
+
+            // Reset form
+            document.getElementById('quickAddSampleForm').reset();
+
+            // Set the sample in the main form
+            sampleSearch.value = sampleId.toUpperCase();
+            selectedSampleDisplay.innerHTML = `
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle"></i> New sample created and selected: <strong>${sampleId.toUpperCase()}</strong>
+                </div>
+            `;
+
+            // Re-enable button
+            this.disabled = false;
+            this.innerHTML = '<i class="bi bi-check-circle"></i> Create Sample';
+
+            // Trigger search to get the sample ID
+            setTimeout(() => {
+                sampleSearch.dispatchEvent(new Event('input'));
+            }, 500);
+        })
+        .catch(error => {
+            alert('Error creating sample. It may already exist.');
+            console.error(error);
+
+            // Re-enable button
+            this.disabled = false;
+            this.innerHTML = '<i class="bi bi-check-circle"></i> Create Sample';
+        });
+    });
+
+    // Close results when clicking outside
+    document.addEventListener('click', function(e) {
+        if (!sampleSearch.contains(e.target) && !sampleResults.contains(e.target)) {
+            sampleResults.style.display = 'none';
+        }
+    });
+</script>
 {% endblock %}
