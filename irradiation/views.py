@@ -1,6 +1,6 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.views.generic import ListView, DetailView, CreateView, UpdateView, DeleteView
-from django.db.models import Q, Count
+from django.db.models import Q, Count, F
 from django.urls import reverse_lazy
 from django.http import JsonResponse
 from django.contrib import messages
@@ -309,7 +309,9 @@ class SampleListView(ListView):
     def get_queryset(self):
         """Filter to show only base samples"""
         queryset = Sample.objects.filter(is_combo=False).annotate(
-            num_irradiations=Count('irradiation_logs')
+            direct_irradiations=Count('irradiation_logs', distinct=True),
+            combo_irradiations=Count('used_in_combos__combo_sample__irradiation_logs', distinct=True),
+            num_irradiations=F('direct_irradiations') + F('combo_irradiations')
         )
 
         # Search functionality
