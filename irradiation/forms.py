@@ -282,7 +282,7 @@ SampleCompositionFormSet = inlineformset_factory(
     Sample,
     SampleComposition,
     form=SampleCompositionForm,
-    extra=1,
+    extra=0,  # Don't show extra forms by default, use "Add Element" button
     can_delete=True,
     min_num=0,
     validate_min=False,
