@@ -156,16 +156,21 @@ class ActivationCalculator:
 
             for log in irradiation_logs:
                 # Get flux configuration for this location
+                # Note: Location values must match exactly (e.g., 'bare_rabbit', 'cad_rabbit')
                 flux_config = flux_configs.get(log.actual_location)
                 if not flux_config:
-                    logger.warning(f"No flux configuration for location {log.actual_location}. Skipping irradiation.")
+                    available_locations = list(flux_configs.keys())
+                    logger.warning(
+                        f"No flux configuration for location '{log.actual_location}'. "
+                        f"Available locations: {available_locations}. Skipping irradiation."
+                    )
                     skipped_irradiations.append({
                         'date': log.irradiation_date.isoformat() if log.irradiation_date else 'Unknown',
                         'location': log.actual_location,
                         'power': float(log.actual_power),
                         'time': float(log.total_time),
                         'time_unit': log.total_time_unit,
-                        'reason': 'No flux configuration for this location'
+                        'reason': f'No flux configuration for location "{log.actual_location}". Available: {", ".join(available_locations)}'
                     })
                     continue
 
