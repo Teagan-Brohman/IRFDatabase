@@ -3,6 +3,7 @@ from django.views.generic import ListView, DetailView, CreateView, UpdateView
 from django.db.models import Q, Count
 from django.urls import reverse_lazy
 from django.http import JsonResponse
+from collections import OrderedDict
 from .models import IrradiationRequestForm, SampleIrradiationLog
 from .forms import IRFForm, SampleLogForm
 
@@ -82,7 +83,20 @@ class IRFDetailView(DetailView):
     def get_context_data(self, **kwargs):
         """Add sample logs and version history to context"""
         context = super().get_context_data(**kwargs)
-        context['sample_logs'] = self.object.irradiation_logs.all().order_by('-irradiation_date')
+
+        # Get all sample logs ordered by date (most recent first), then by time
+        all_logs = self.object.irradiation_logs.all().order_by('-irradiation_date', '-time_in')
+
+        # Group logs by date
+        logs_by_date = OrderedDict()
+        for log in all_logs:
+            date_key = log.irradiation_date
+            if date_key not in logs_by_date:
+                logs_by_date[date_key] = []
+            logs_by_date[date_key].append(log)
+
+        context['sample_logs'] = all_logs  # Keep for backward compatibility
+        context['logs_by_date'] = logs_by_date
         context['active_tab'] = self.request.GET.get('tab', 'details')
 
         # Add version history
@@ -145,11 +159,17 @@ class SampleLogCreateView(CreateView):
     form_class = SampleLogForm
 
     def get_initial(self):
-        """Pre-fill IRF if provided in URL"""
+        """Pre-fill IRF and date if provided in URL"""
         initial = super().get_initial()
         irf_id = self.request.GET.get('irf')
         if irf_id:
             initial['irf'] = irf_id
+
+        # Pre-fill date if provided
+        date = self.request.GET.get('date')
+        if date:
+            initial['irradiation_date'] = date
+
         return initial
 
     def get_success_url(self):
