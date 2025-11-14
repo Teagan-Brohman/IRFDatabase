@@ -138,6 +138,12 @@ class IRFUpdateView(UpdateView):
             new_irf.version_number = old_irf.version_number + 1
             new_irf.change_type = 'amendment'
             new_irf.change_notes = change_notes
+
+            # Modify IRF number to include version suffix (e.g., "24-001" -> "24-001-v2")
+            # This ensures uniqueness while keeping the base number for reference
+            base_irf_number = old_irf.irf_number.split('-v')[0]  # Strip existing version suffix if any
+            new_irf.irf_number = f"{base_irf_number}-v{new_irf.version_number}"
+
             new_irf.save()
 
             # Update the M2M relationships if any
