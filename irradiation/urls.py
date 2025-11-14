@@ -29,4 +29,5 @@ urlpatterns = [
     # API endpoints
     path('api/irf-autocomplete/', views.irf_autocomplete, name='irf_autocomplete'),
     path('api/sample-autocomplete/', views.sample_autocomplete, name='sample_autocomplete'),
+    path('api/sample/<int:pk>/calculate-isotopics/', views.calculate_sample_isotopics, name='calculate_isotopics'),
 ]

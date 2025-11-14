@@ -1,6 +1,9 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import IrradiationRequestForm, SampleIrradiationLog, Sample, SampleComponent
+from .models import (
+    IrradiationRequestForm, SampleIrradiationLog, Sample, SampleComponent,
+    FluxConfiguration, SampleComposition, ActivationResult
+)
 
 
 class SampleIrradiationLogInline(admin.TabularInline):
@@ -348,6 +351,145 @@ class SampleComponentAdmin(admin.ModelAdmin):
         'combo_sample__sample_id',
         'component_sample__sample_id',
     ]
+
+
+# Activation Analysis Admin
+
+@admin.register(FluxConfiguration)
+class FluxConfigurationAdmin(admin.ModelAdmin):
+    """Admin interface for Flux Configurations"""
+
+    list_display = [
+        'location',
+        'thermal_flux_display',
+        'fast_flux_display',
+        'reference_power',
+        'updated_date',
+    ]
+
+    list_filter = ['location']
+
+    fieldsets = (
+        ('Location', {
+            'fields': ('location', 'reference_power')
+        }),
+        ('Neutron Flux Values', {
+            'fields': (
+                'thermal_flux',
+                'fast_flux',
+                'intermediate_flux',
+                'cadmium_ratio',
+            ),
+            'description': 'Flux values at reference power (typically 200 kW)'
+        }),
+        ('Notes', {
+            'fields': ('notes', 'updated_date'),
+            'classes': ('collapse',)
+        }),
+    )
+
+    readonly_fields = ['updated_date']
+
+    def thermal_flux_display(self, obj):
+        """Display thermal flux in scientific notation"""
+        return f"{float(obj.thermal_flux):.2e} n/cm²/s"
+    thermal_flux_display.short_description = 'Thermal Flux'
+
+    def fast_flux_display(self, obj):
+        """Display fast flux in scientific notation"""
+        return f"{float(obj.fast_flux):.2e} n/cm²/s"
+    fast_flux_display.short_description = 'Fast Flux'
+
+
+class SampleCompositionInline(admin.TabularInline):
+    """Inline admin for Sample Composition"""
+    model = SampleComposition
+    extra = 1
+    fields = ['element', 'isotope', 'fraction', 'composition_type', 'order']
+    verbose_name = 'Composition Element'
+    verbose_name_plural = 'Elemental Composition'
+
+
+# Update SampleAdmin to include composition inline
+# Modify the existing SampleAdmin.inlines
+SampleAdmin.inlines = [SampleCompositionInline]
+
+
+@admin.register(ActivationResult)
+class ActivationResultAdmin(admin.ModelAdmin):
+    """Admin interface for Activation Results"""
+
+    list_display = [
+        'sample',
+        'calculated_at',
+        'total_activity_display',
+        'number_of_isotopes',
+        'calculation_method',
+        'calculation_successful',
+    ]
+
+    list_filter = [
+        'calculation_successful',
+        'calculation_method',
+        'calculated_at',
+    ]
+
+    search_fields = [
+        'sample__sample_id',
+        'notes',
+    ]
+
+    readonly_fields = [
+        'calculated_at',
+        'total_activity_bq',
+        'total_activity_ci_display',
+        'number_of_isotopes',
+        'irradiation_hash',
+    ]
+
+    fieldsets = (
+        ('Sample', {
+            'fields': ('sample',)
+        }),
+        ('Calculation Info', {
+            'fields': (
+                'calculation_method',
+                'calculated_at',
+                'reference_time',
+                'irradiation_hash',
+            )
+        }),
+        ('Results', {
+            'fields': (
+                'total_activity_bq',
+                'total_activity_ci_display',
+                'estimated_dose_rate_1ft',
+                'number_of_isotopes',
+            )
+        }),
+        ('Status', {
+            'fields': (
+                'calculation_successful',
+                'error_message',
+            )
+        }),
+        ('Detailed Inventory', {
+            'fields': ('isotopic_inventory', 'notes'),
+            'classes': ('collapse',)
+        }),
+    )
+
+    def total_activity_display(self, obj):
+        """Display activity in scientific notation"""
+        bq = float(obj.total_activity_bq)
+        ci = bq / 3.7e10
+        return f"{bq:.2e} Bq ({ci:.2e} Ci)"
+    total_activity_display.short_description = 'Total Activity'
+
+    def total_activity_ci_display(self, obj):
+        """Display activity in Curies"""
+        return f"{obj.get_activity_ci():.4e} Ci"
+    total_activity_ci_display.short_description = 'Activity (Ci)'
 
 
 # Customize admin site headers
