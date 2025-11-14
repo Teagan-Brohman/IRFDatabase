@@ -1,6 +1,6 @@
 from django import forms
-from django.forms import CheckboxSelectMultiple
-from .models import IrradiationRequestForm, SampleIrradiationLog
+from django.forms import CheckboxSelectMultiple, inlineformset_factory
+from .models import IrradiationRequestForm, SampleIrradiationLog, Sample, SampleComposition
 
 
 class IRFForm(forms.ModelForm):
@@ -244,3 +244,46 @@ class SampleLogForm(forms.ModelForm):
             )
 
         return cleaned_data
+
+
+class SampleForm(forms.ModelForm):
+    """Custom form for Sample with enhanced widgets"""
+
+    class Meta:
+        model = Sample
+        fields = [
+            'sample_id', 'name', 'description', 'material_type',
+            'physical_form', 'mass', 'mass_unit', 'dimensions', 'notes'
+        ]
+
+        widgets = {
+            'description': forms.Textarea(attrs={'rows': 3}),
+            'notes': forms.Textarea(attrs={'rows': 3}),
+        }
+
+
+class SampleCompositionForm(forms.ModelForm):
+    """Form for individual composition elements"""
+
+    class Meta:
+        model = SampleComposition
+        fields = ['element', 'isotope', 'fraction', 'composition_type', 'order']
+        widgets = {
+            'element': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g., Al, Cu, Au'}),
+            'isotope': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g., Au-197 (optional)'}),
+            'fraction': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0', 'max': '100'}),
+            'composition_type': forms.Select(attrs={'class': 'form-select'}),
+            'order': forms.HiddenInput(),
+        }
+
+
+# Formset for managing multiple composition elements
+SampleCompositionFormSet = inlineformset_factory(
+    Sample,
+    SampleComposition,
+    form=SampleCompositionForm,
+    extra=1,
+    can_delete=True,
+    min_num=0,
+    validate_min=False,
+)

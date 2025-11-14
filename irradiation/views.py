@@ -6,7 +6,7 @@ from django.http import JsonResponse
 from django.contrib import messages
 from collections import OrderedDict
 from .models import IrradiationRequestForm, SampleIrradiationLog, Sample, SampleComponent
-from .forms import IRFForm, SampleLogForm
+from .forms import IRFForm, SampleLogForm, SampleForm, SampleCompositionFormSet
 
 
 class IRFListView(ListView):
@@ -410,28 +410,43 @@ class SampleCreateView(CreateView):
     """Create a new base sample"""
     model = Sample
     template_name = 'irradiation/sample_form.html'
-    fields = [
-        'sample_id', 'name', 'description', 'material_type',
-        'physical_form', 'mass', 'mass_unit', 'dimensions', 'notes'
-    ]
+    form_class = SampleForm
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        if self.request.POST:
+            context['composition_formset'] = SampleCompositionFormSet(self.request.POST, instance=self.object)
+        else:
+            context['composition_formset'] = SampleCompositionFormSet(instance=self.object)
+        return context
 
     def form_valid(self, form):
+        context = self.get_context_data()
+        composition_formset = context['composition_formset']
+
         # Ensure is_combo is False for base samples
         form.instance.is_combo = False
-        response = super().form_valid(form)
 
-        # Handle AJAX requests (from quick add modal)
-        if self.request.headers.get('X-Requested-With') == 'XMLHttpRequest' or \
-           self.request.content_type == 'application/x-www-form-urlencoded':
-            return JsonResponse({
-                'success': True,
-                'sample_id': self.object.sample_id,
-                'sample_pk': self.object.pk,
-                'url': self.object.get_absolute_url()
-            })
+        # Validate formset
+        if composition_formset.is_valid():
+            self.object = form.save()
+            composition_formset.instance = self.object
+            composition_formset.save()
 
-        messages.success(self.request, f'Sample {form.instance.sample_id} created successfully.')
-        return response
+            # Handle AJAX requests (from quick add modal)
+            if self.request.headers.get('X-Requested-With') == 'XMLHttpRequest' or \
+               self.request.content_type == 'application/x-www-form-urlencoded':
+                return JsonResponse({
+                    'success': True,
+                    'sample_id': self.object.sample_id,
+                    'sample_pk': self.object.pk,
+                    'url': self.object.get_absolute_url()
+                })
+
+            messages.success(self.request, f'Sample {form.instance.sample_id} created successfully.')
+            return redirect(self.object.get_absolute_url())
+        else:
+            return self.form_invalid(form)
 
     def form_invalid(self, form):
         # Handle AJAX requests
@@ -448,14 +463,30 @@ class SampleUpdateView(UpdateView):
     """Update an existing sample"""
     model = Sample
     template_name = 'irradiation/sample_form.html'
-    fields = [
-        'sample_id', 'name', 'description', 'material_type',
-        'physical_form', 'mass', 'mass_unit', 'dimensions', 'notes'
-    ]
+    form_class = SampleForm
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        if self.request.POST:
+            context['composition_formset'] = SampleCompositionFormSet(self.request.POST, instance=self.object)
+        else:
+            context['composition_formset'] = SampleCompositionFormSet(instance=self.object)
+        return context
 
     def form_valid(self, form):
-        messages.success(self.request, f'Sample {form.instance.sample_id} updated successfully.')
-        return super().form_valid(form)
+        context = self.get_context_data()
+        composition_formset = context['composition_formset']
+
+        # Validate formset
+        if composition_formset.is_valid():
+            self.object = form.save()
+            composition_formset.instance = self.object
+            composition_formset.save()
+
+            messages.success(self.request, f'Sample {form.instance.sample_id} updated successfully.')
+            return redirect(self.object.get_absolute_url())
+        else:
+            return self.form_invalid(form)
 
 
 class ComboSampleCreateView(CreateView):

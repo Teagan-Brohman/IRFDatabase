@@ -148,6 +148,73 @@
                             {% endif %}
                         </div>
 
+                        <!-- Composition Section -->
+                        <div class="card mb-3">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0"><i class="bi bi-pie-chart"></i> Elemental Composition</h5>
+                                <button type="button" class="btn btn-sm btn-primary" id="add-composition" onclick="addCompositionRow()">
+                                    <i class="bi bi-plus-circle"></i> Add Element
+                                </button>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-2">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="autoFillComposition()">
+                                        <i class="bi bi-magic"></i> Auto-fill from Material Type
+                                    </button>
+                                </div>
+
+                                {{ composition_formset.management_form }}
+
+                                <div id="composition-forms">
+                                    {% for comp_form in composition_formset %}
+                                        <div class="composition-form row g-2 mb-2 align-items-center">
+                                            <div class="col-md-2">
+                                                <label class="form-label small">Element</label>
+                                                {{ comp_form.element }}
+                                                {% if comp_form.element.errors %}
+                                                    <div class="invalid-feedback d-block">{{ comp_form.element.errors.0 }}</div>
+                                                {% endif %}
+                                            </div>
+                                            <div class="col-md-2">
+                                                <label class="form-label small">Isotope</label>
+                                                {{ comp_form.isotope }}
+                                            </div>
+                                            <div class="col-md-2">
+                                                <label class="form-label small">Fraction (%)</label>
+                                                {{ comp_form.fraction }}
+                                                {% if comp_form.fraction.errors %}
+                                                    <div class="invalid-feedback d-block">{{ comp_form.fraction.errors.0 }}</div>
+                                                {% endif %}
+                                            </div>
+                                            <div class="col-md-3">
+                                                <label class="form-label small">Type</label>
+                                                {{ comp_form.composition_type }}
+                                            </div>
+                                            <div class="col-md-2">
+                                                {{ comp_form.order }}
+                                                {{ comp_form.id }}
+                                                {% if comp_form.instance.pk %}
+                                                    <label class="form-label small">Delete</label>
+                                                    <div class="form-check">
+                                                        {{ comp_form.DELETE }}
+                                                    </div>
+                                                {% else %}
+                                                    <label class="form-label small">&nbsp;</label>
+                                                    <button type="button" class="btn btn-sm btn-outline-danger w-100" onclick="removeCompositionRow(this)">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    {% endfor %}
+                                </div>
+
+                                <div class="text-muted small mt-2">
+                                    <i class="bi bi-info-circle"></i> Add chemical elements that make up this sample. Fractions should sum to 100%.
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="d-flex gap-2">
                             <button type="submit" class="btn btn-primary">
                                 <i class="bi bi-check-circle"></i>
@@ -178,4 +245,150 @@
         </div>
     </div>
 </div>
+
+<script>
+// Material type to element mapping
+const materialToElement = {
+    'aluminum': 'Al',
+    'aluminium': 'Al',
+    'al': 'Al',
+    'copper': 'Cu',
+    'cu': 'Cu',
+    'gold': 'Au',
+    'au': 'Au',
+    'silver': 'Ag',
+    'ag': 'Ag',
+    'iron': 'Fe',
+    'fe': 'Fe',
+    'nickel': 'Ni',
+    'ni': 'Ni',
+    'titanium': 'Ti',
+    'ti': 'Ti',
+    'uranium': 'U',
+    'u': 'U',
+    'cobalt': 'Co',
+    'co': 'Co',
+    'manganese': 'Mn',
+    'mn': 'Mn',
+    'zinc': 'Zn',
+    'zn': 'Zn',
+    'lead': 'Pb',
+    'pb': 'Pb',
+    'tungsten': 'W',
+    'w': 'W',
+    'carbon': 'C',
+    'c': 'C',
+    'graphite': 'C',
+};
+
+function autoFillComposition() {
+    const materialType = document.getElementById('{{ form.material_type.id_for_label }}').value.trim().toLowerCase();
+
+    if (!materialType) {
+        alert('Please enter a material type first.');
+        return;
+    }
+
+    // Check if material matches a known element
+    const element = materialToElement[materialType];
+
+    if (element) {
+        // Clear existing composition forms (except the first empty one)
+        const forms = document.querySelectorAll('.composition-form');
+        forms.forEach((form, index) => {
+            if (index > 0) {
+                // Mark for deletion if it has an id, otherwise remove
+                const deleteCheckbox = form.querySelector('input[type="checkbox"][name$="-DELETE"]');
+                if (deleteCheckbox) {
+                    deleteCheckbox.checked = true;
+                    form.style.display = 'none';
+                } else {
+                    form.remove();
+                }
+            }
+        });
+
+        // Fill the first form with 100% of the element
+        const firstForm = document.querySelector('.composition-form');
+        const elementInput = firstForm.querySelector('input[name$="-element"]');
+        const fractionInput = firstForm.querySelector('input[name$="-fraction"]');
+        const typeSelect = firstForm.querySelector('select[name$="-composition_type"]');
+
+        if (elementInput) elementInput.value = element;
+        if (fractionInput) fractionInput.value = '100.00';
+        if (typeSelect) typeSelect.value = 'wt';
+
+        // Update total forms count
+        updateFormsetCount();
+    } else {
+        alert(`Material type "${materialType}" is not recognized. Known materials: ${Object.keys(materialToElement).join(', ')}`);
+    }
+}
+
+function addCompositionRow() {
+    const formsContainer = document.getElementById('composition-forms');
+    const totalForms = document.getElementById('id_composition_elements-TOTAL_FORMS');
+    const formCount = parseInt(totalForms.value);
+
+    // Get the first form as a template
+    const firstForm = document.querySelector('.composition-form');
+    if (!firstForm) return;
+
+    // Clone the form
+    const newForm = firstForm.cloneNode(true);
+
+    // Update form index in all field names and ids
+    const formRegex = new RegExp('composition_elements-(\\d+)-', 'g');
+    newForm.innerHTML = newForm.innerHTML.replace(formRegex, `composition_elements-${formCount}-`);
+
+    // Clear values in the new form
+    newForm.querySelectorAll('input[type="text"], input[type="number"]').forEach(input => {
+        if (!input.name.endsWith('-order') && !input.name.endsWith('-id')) {
+            input.value = '';
+        }
+    });
+
+    // Remove any existing DELETE checkbox and add a remove button
+    const deleteCell = newForm.querySelector('.col-md-2:last-child');
+    deleteCell.innerHTML = `
+        <label class="form-label small">&nbsp;</label>
+        <button type="button" class="btn btn-sm btn-outline-danger w-100" onclick="removeCompositionRow(this)">
+            <i class="bi bi-trash"></i>
+        </button>
+    `;
+
+    // Append the new form
+    formsContainer.appendChild(newForm);
+
+    // Increment the form count
+    totalForms.value = formCount + 1;
+}
+
+function removeCompositionRow(button) {
+    const form = button.closest('.composition-form');
+    form.remove();
+    updateFormsetCount();
+}
+
+function updateFormsetCount() {
+    const forms = document.querySelectorAll('.composition-form');
+    const totalForms = document.getElementById('id_composition_elements-TOTAL_FORMS');
+    let visibleCount = 0;
+
+    forms.forEach((form, index) => {
+        const deleteCheckbox = form.querySelector('input[type="checkbox"][name$="-DELETE"]');
+        if (!deleteCheckbox || !deleteCheckbox.checked) {
+            if (form.style.display !== 'none') {
+                visibleCount++;
+            }
+        }
+    });
+
+    // Don't update if we're removing forms - Django will handle it
+    // Just ensure we have at least the right count
+    if (visibleCount > parseInt(totalForms.value)) {
+        totalForms.value = visibleCount;
+    }
+}
+</script>
 {% endblock %}
