@@ -341,8 +341,8 @@ class IrradiationRequestForm(models.Model):
         return bool(self.approver1_date and self.approver2_date)
 
     def total_irradiations(self):
-        """Count total irradiations performed under this IRF"""
-        return self.irradiation_logs.count()
+        """Count total irradiations performed under this IRF (including all versions)"""
+        return self.get_all_irradiation_logs().count()
 
     def has_amendments(self):
         """Check if this IRF has any amendments"""
@@ -374,6 +374,22 @@ class IrradiationRequestForm(models.Model):
     def is_latest_version(self):
         """Check if this is the latest version"""
         return not self.has_amendments()
+
+    def get_all_irradiation_logs(self):
+        """
+        Get all irradiation logs from this IRF and all its version history
+        This ensures that amended IRFs show logs from previous versions too
+        """
+        # Get all versions in the history
+        versions = self.get_version_history()
+
+        # Get all PKs of versions
+        version_pks = [v.pk for v in versions]
+
+        # Return all logs from all versions (no duplicates since each log has one IRF)
+        return SampleIrradiationLog.objects.filter(
+            irf__pk__in=version_pks
+        ).distinct()
 
 
 class Sample(models.Model):
