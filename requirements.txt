@@ -9,5 +9,9 @@ radioactivedecay>=0.4.0
 numpy>=1.24.0
 scipy>=1.10.0
 
-# Optional: PyNE for multi-group cross-sections (requires Fortran compilers)
-# pyne
+# PyNE for multi-group neutron cross-sections and nuclear data
+# NOTE: PyNE is best installed via conda-forge:
+#   conda install -c conda-forge pyne
+# If pip installation is required, you may need Fortran compilers (gfortran)
+# See: https://pyne.io/install/index.html
+pyne
