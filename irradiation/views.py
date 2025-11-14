@@ -619,6 +619,7 @@ def calculate_sample_isotopics(request, pk):
             _save_activation_result(sample, results, use_multigroup)
 
         # Prepare response
+        skipped = results.get('skipped_irradiations', [])
         response_data = {
             'success': True,
             'sample_id': sample.sample_id,
@@ -630,6 +631,8 @@ def calculate_sample_isotopics(request, pk):
             'num_isotopes': len(results['isotopes']),
             'from_cache': results.get('from_cache', False),
             'irradiation_count': logs.count(),
+            'skipped_irradiations': skipped,
+            'processed_count': logs.count() - len(skipped),
         }
 
         return JsonResponse(response_data)

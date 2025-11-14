@@ -215,6 +215,19 @@
 
             <!-- Results Summary -->
             <div id="resultsContent" style="display: none;">
+                <!-- Warning for skipped irradiations -->
+                <div id="skippedWarning" class="alert alert-warning" style="display: none;">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <strong>Warning: Incomplete Data</strong>
+                    <p class="mb-2" id="skippedMessage"></p>
+                    <div id="skippedDetails"></div>
+                    <small class="text-muted">
+                        <i class="bi bi-info-circle"></i>
+                        Results shown are based on <strong id="processedCount">0</strong> of <strong id="totalCount">0</strong> irradiations.
+                        To include all irradiations, please configure flux values in Admin → Flux configurations.
+                    </small>
+                </div>
+
                 <div class="row mb-4">
                     <div class="col-md-4">
                         <div class="card bg-light">
@@ -406,6 +419,34 @@ function calculateIsotopics(minFraction = 0.001) {
 function updateDisplay(data) {
     // Show results content
     document.getElementById('resultsContent').style.display = 'block';
+
+    // Handle skipped irradiations warning
+    const skippedWarning = document.getElementById('skippedWarning');
+    if (data.skipped_irradiations && data.skipped_irradiations.length > 0) {
+        const skipped = data.skipped_irradiations;
+        const skippedCount = skipped.length;
+
+        // Update warning message
+        document.getElementById('skippedMessage').textContent =
+            `${skippedCount} irradiation${skippedCount > 1 ? 's were' : ' was'} skipped due to missing flux configuration:`;
+
+        // Show details of skipped irradiations
+        let detailsHtml = '<ul class="mb-2">';
+        skipped.forEach(skip => {
+            detailsHtml += `<li><strong>${skip.date}</strong> at <em>${skip.location}</em> ` +
+                          `(${skip.power} kW for ${skip.time} ${skip.time_unit})</li>`;
+        });
+        detailsHtml += '</ul>';
+        document.getElementById('skippedDetails').innerHTML = detailsHtml;
+
+        // Update counts
+        document.getElementById('processedCount').textContent = data.processed_count || 0;
+        document.getElementById('totalCount').textContent = data.irradiation_count || 0;
+
+        skippedWarning.style.display = 'block';
+    } else {
+        skippedWarning.style.display = 'none';
+    }
 
     // Update summary cards
     const activity = currentActivityUnit === 'bq' ? data.total_activity_bq : data.total_activity_ci;

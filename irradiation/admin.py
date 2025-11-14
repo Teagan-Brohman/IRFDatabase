@@ -355,9 +355,130 @@ class SampleComponentAdmin(admin.ModelAdmin):
 
 # Activation Analysis Admin
 
+from django import forms
+from decimal import Decimal
+
+
+class FluxConfigurationAdminForm(forms.ModelForm):
+    """Custom form for FluxConfiguration with scientific notation input"""
+
+    # Thermal flux scientific notation fields
+    thermal_flux_mantissa = forms.DecimalField(
+        required=False,
+        max_digits=5,
+        decimal_places=2,
+        initial=1.0,
+        label="Thermal Flux Mantissa",
+        help_text="e.g., 2.5 for 2.5×10ⁿ"
+    )
+    thermal_flux_exponent = forms.IntegerField(
+        required=False,
+        initial=12,
+        label="×10^",
+        help_text="e.g., 12 for ×10¹²"
+    )
+
+    # Fast flux scientific notation fields
+    fast_flux_mantissa = forms.DecimalField(
+        required=False,
+        max_digits=5,
+        decimal_places=2,
+        initial=1.0,
+        label="Fast Flux Mantissa",
+        help_text="e.g., 5.0 for 5.0×10ⁿ"
+    )
+    fast_flux_exponent = forms.IntegerField(
+        required=False,
+        initial=11,
+        label="×10^",
+        help_text="e.g., 11 for ×10¹¹"
+    )
+
+    # Intermediate flux scientific notation fields
+    intermediate_flux_mantissa = forms.DecimalField(
+        required=False,
+        max_digits=5,
+        decimal_places=2,
+        label="Intermediate Flux Mantissa",
+        help_text="e.g., 3.0 for 3.0×10ⁿ"
+    )
+    intermediate_flux_exponent = forms.IntegerField(
+        required=False,
+        initial=11,
+        label="×10^",
+        help_text="e.g., 11 for ×10¹¹"
+    )
+
+    class Meta:
+        model = FluxConfiguration
+        fields = '__all__'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # If editing existing instance, pre-populate mantissa/exponent from stored values
+        if self.instance and self.instance.pk:
+            # Convert stored thermal_flux to mantissa/exponent
+            if self.instance.thermal_flux:
+                mantissa, exponent = self._decimal_to_scientific(self.instance.thermal_flux)
+                self.fields['thermal_flux_mantissa'].initial = mantissa
+                self.fields['thermal_flux_exponent'].initial = exponent
+
+            # Convert stored fast_flux to mantissa/exponent
+            if self.instance.fast_flux:
+                mantissa, exponent = self._decimal_to_scientific(self.instance.fast_flux)
+                self.fields['fast_flux_mantissa'].initial = mantissa
+                self.fields['fast_flux_exponent'].initial = exponent
+
+            # Convert stored intermediate_flux to mantissa/exponent
+            if self.instance.intermediate_flux:
+                mantissa, exponent = self._decimal_to_scientific(self.instance.intermediate_flux)
+                self.fields['intermediate_flux_mantissa'].initial = mantissa
+                self.fields['intermediate_flux_exponent'].initial = exponent
+
+    def _decimal_to_scientific(self, value):
+        """Convert decimal value to mantissa and exponent"""
+        if not value or value == 0:
+            return Decimal('1.0'), 0
+
+        import math
+        float_val = float(value)
+        exponent = int(math.floor(math.log10(abs(float_val))))
+        mantissa = float_val / (10 ** exponent)
+        return Decimal(str(round(mantissa, 2))), exponent
+
+    def clean(self):
+        cleaned_data = super().clean()
+
+        # Calculate thermal_flux from mantissa × 10^exponent
+        thermal_mantissa = cleaned_data.get('thermal_flux_mantissa')
+        thermal_exponent = cleaned_data.get('thermal_flux_exponent')
+        if thermal_mantissa is not None and thermal_exponent is not None:
+            thermal_flux = Decimal(thermal_mantissa) * Decimal(10 ** thermal_exponent)
+            cleaned_data['thermal_flux'] = thermal_flux
+
+        # Calculate fast_flux from mantissa × 10^exponent
+        fast_mantissa = cleaned_data.get('fast_flux_mantissa')
+        fast_exponent = cleaned_data.get('fast_flux_exponent')
+        if fast_mantissa is not None and fast_exponent is not None:
+            fast_flux = Decimal(fast_mantissa) * Decimal(10 ** fast_exponent)
+            cleaned_data['fast_flux'] = fast_flux
+
+        # Calculate intermediate_flux from mantissa × 10^exponent (optional)
+        intermediate_mantissa = cleaned_data.get('intermediate_flux_mantissa')
+        intermediate_exponent = cleaned_data.get('intermediate_flux_exponent')
+        if intermediate_mantissa is not None and intermediate_exponent is not None:
+            intermediate_flux = Decimal(intermediate_mantissa) * Decimal(10 ** intermediate_exponent)
+            cleaned_data['intermediate_flux'] = intermediate_flux
+
+        return cleaned_data
+
+
 @admin.register(FluxConfiguration)
 class FluxConfigurationAdmin(admin.ModelAdmin):
     """Admin interface for Flux Configurations"""
+
+    form = FluxConfigurationAdminForm
 
     list_display = [
         'location',
@@ -373,14 +494,27 @@ class FluxConfigurationAdmin(admin.ModelAdmin):
         ('Location', {
             'fields': ('location', 'reference_power')
         }),
-        ('Neutron Flux Values', {
+        ('Thermal Neutron Flux (E < 0.5 eV)', {
             'fields': (
+                ('thermal_flux_mantissa', 'thermal_flux_exponent'),
                 'thermal_flux',
-                'fast_flux',
-                'intermediate_flux',
-                'cadmium_ratio',
             ),
-            'description': 'Flux values at reference power (typically 200 kW)'
+            'description': 'Enter values in scientific notation above, or enter full value directly below'
+        }),
+        ('Fast Neutron Flux (E > 0.1 MeV)', {
+            'fields': (
+                ('fast_flux_mantissa', 'fast_flux_exponent'),
+                'fast_flux',
+            ),
+        }),
+        ('Intermediate Neutron Flux (0.5 eV < E < 0.1 MeV) - Optional', {
+            'fields': (
+                ('intermediate_flux_mantissa', 'intermediate_flux_exponent'),
+                'intermediate_flux',
+            ),
+        }),
+        ('Additional Parameters', {
+            'fields': ('cadmium_ratio',),
         }),
         ('Notes', {
             'fields': ('notes', 'updated_date'),
@@ -388,7 +522,7 @@ class FluxConfigurationAdmin(admin.ModelAdmin):
         }),
     )
 
-    readonly_fields = ['updated_date']
+    readonly_fields = ['updated_date', 'thermal_flux', 'fast_flux', 'intermediate_flux']
 
     def thermal_flux_display(self, obj):
         """Display thermal flux in scientific notation"""

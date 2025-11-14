@@ -152,11 +152,21 @@ class ActivationCalculator:
 
             # Process each irradiation in chronological order
             reference_time = None
+            skipped_irradiations = []  # Track irradiations skipped due to missing flux
+
             for log in irradiation_logs:
                 # Get flux configuration for this location
                 flux_config = flux_configs.get(log.actual_location)
                 if not flux_config:
-                    logger.warning(f"No flux configuration for location {log.actual_location}. Skipping.")
+                    logger.warning(f"No flux configuration for location {log.actual_location}. Skipping irradiation.")
+                    skipped_irradiations.append({
+                        'date': log.irradiation_date.isoformat(),
+                        'location': log.actual_location,
+                        'power': float(log.actual_power),
+                        'time': float(log.total_time),
+                        'time_unit': log.total_time_unit,
+                        'reason': 'No flux configuration for this location'
+                    })
                     continue
 
                 # Calculate inventory after this irradiation + decay
@@ -173,6 +183,7 @@ class ActivationCalculator:
             results['reference_time'] = reference_time.isoformat()
             results['irradiation_hash'] = irr_hash
             results['calculation_successful'] = True
+            results['skipped_irradiations'] = skipped_irradiations  # Include skipped irradiations
 
             # Estimate dose rate (simplified - can be improved)
             results['estimated_dose_rate_1ft'] = self._estimate_dose_rate(results['isotopes'])
