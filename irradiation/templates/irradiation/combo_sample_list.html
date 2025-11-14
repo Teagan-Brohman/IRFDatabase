@@ -1,0 +1,124 @@
+{% extends 'irradiation/base.html' %}
+
+{% block title %}Combo Samples - IRF Database{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col">
+            <h1><i class="bi bi-boxes"></i> Combo Samples</h1>
+            <p class="text-muted">Combinations of multiple base samples</p>
+        </div>
+        <div class="col-auto">
+            <a href="{% url 'irradiation:combo_sample_create' %}" class="btn btn-primary">
+                <i class="bi bi-plus-square"></i> New Combo Sample
+            </a>
+        </div>
+    </div>
+
+    <!-- Search -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-10">
+                    <label for="search" class="form-label">Search</label>
+                    <input type="text" class="form-control" id="search" name="q"
+                           value="{{ search_query }}"
+                           placeholder="Sample ID, name, description...">
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-search"></i> Search
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Results -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><strong>{{ page_obj.paginator.count }}</strong> combo sample{% if page_obj.paginator.count != 1 %}s{% endif %} found</span>
+        </div>
+        <div class="card-body p-0">
+            {% if samples %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Sample ID</th>
+                                <th>Name</th>
+                                <th>Components</th>
+                                <th>Irradiations</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for sample in samples %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ sample.sample_id }}</strong>
+                                        <span class="badge bg-secondary">COMBO</span>
+                                    </td>
+                                    <td>{{ sample.name|default:"-" }}</td>
+                                    <td>
+                                        <span class="badge bg-info">{{ sample.num_components }} component{% if sample.num_components != 1 %}s{% endif %}</span>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-info">{{ sample.num_irradiations }}</span>
+                                    </td>
+                                    <td>
+                                        <a href="{% url 'irradiation:sample_detail' sample.pk %}"
+                                           class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-eye"></i> View
+                                        </a>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                {% if is_paginated %}
+                    <div class="card-footer">
+                        <nav aria-label="Page navigation">
+                            <ul class="pagination justify-content-center mb-0">
+                                {% if page_obj.has_previous %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page=1{% if search_query %}&q={{ search_query }}{% endif %}">First</a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}">Previous</a>
+                                    </li>
+                                {% endif %}
+
+                                <li class="page-item active">
+                                    <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                                </li>
+
+                                {% if page_obj.has_next %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}">Next</a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&q={{ search_query }}{% endif %}">Last</a>
+                                    </li>
+                                {% endif %}
+                            </ul>
+                        </nav>
+                    </div>
+                {% endif %}
+            {% else %}
+                <div class="p-4 text-center text-muted">
+                    <i class="bi bi-inbox" style="font-size: 3rem;"></i>
+                    <p class="mt-2">No combo samples found.</p>
+                    <a href="{% url 'irradiation:combo_sample_create' %}" class="btn btn-primary">
+                        <i class="bi bi-plus-square"></i> Create First Combo Sample
+                    </a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

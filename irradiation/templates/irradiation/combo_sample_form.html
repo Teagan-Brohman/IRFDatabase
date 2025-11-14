@@ -1,0 +1,206 @@
+{% extends 'irradiation/base.html' %}
+
+{% block title %}New Combo Sample - IRF Database{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col">
+            <h1><i class="bi bi-boxes"></i> New Combo Sample</h1>
+            <p class="text-muted">Create a combination of multiple base samples</p>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-body">
+                    <form method="post" id="comboForm">
+                        {% csrf_token %}
+
+                        <div class="mb-3">
+                            <label for="{{ form.sample_id.id_for_label }}" class="form-label">
+                                Combo Sample ID <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" class="form-control {% if form.sample_id.errors %}is-invalid{% endif %}"
+                                   id="{{ form.sample_id.id_for_label }}"
+                                   name="{{ form.sample_id.name }}"
+                                   value="{{ form.sample_id.value|default:'' }}"
+                                   required>
+                            <div class="form-text">Unique identifier for this combo (will be converted to uppercase)</div>
+                            {% if form.sample_id.errors %}
+                                <div class="invalid-feedback">{{ form.sample_id.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="{{ form.name.id_for_label }}" class="form-label">Name</label>
+                            <input type="text" class="form-control {% if form.name.errors %}is-invalid{% endif %}"
+                                   id="{{ form.name.id_for_label }}"
+                                   name="{{ form.name.name }}"
+                                   value="{{ form.name.value|default:'' }}">
+                            <div class="form-text">Descriptive name for the combo</div>
+                            {% if form.name.errors %}
+                                <div class="invalid-feedback">{{ form.name.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="{{ form.description.id_for_label }}" class="form-label">Description</label>
+                            <textarea class="form-control {% if form.description.errors %}is-invalid{% endif %}"
+                                      id="{{ form.description.id_for_label }}"
+                                      name="{{ form.description.name }}"
+                                      rows="3">{{ form.description.value|default:'' }}</textarea>
+                            <div class="form-text">Detailed description of the combo</div>
+                            {% if form.description.errors %}
+                                <div class="invalid-feedback">{{ form.description.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">
+                                Component Samples <span class="text-danger">*</span>
+                            </label>
+                            <div class="card">
+                                <div class="card-body">
+                                    <div class="mb-2">
+                                        <input type="text" class="form-control" id="componentSearch"
+                                               placeholder="Search base samples...">
+                                    </div>
+                                    <div id="componentList" style="max-height: 300px; overflow-y: auto;">
+                                        {% if base_samples %}
+                                            {% for sample in base_samples %}
+                                                <div class="form-check component-item" data-sample-id="{{ sample.sample_id }}">
+                                                    <input class="form-check-input" type="checkbox"
+                                                           name="components" value="{{ sample.pk }}"
+                                                           id="component_{{ sample.pk }}">
+                                                    <label class="form-check-label" for="component_{{ sample.pk }}">
+                                                        <strong>{{ sample.sample_id }}</strong>
+                                                        {% if sample.name %} - {{ sample.name }}{% endif %}
+                                                        {% if sample.material_type %}
+                                                            <br><small class="text-muted">{{ sample.material_type }}{% if sample.physical_form %}, {{ sample.get_physical_form_display }}{% endif %}</small>
+                                                        {% endif %}
+                                                    </label>
+                                                </div>
+                                            {% endfor %}
+                                        {% else %}
+                                            <p class="text-muted">No base samples available. <a href="{% url 'irradiation:sample_create' %}">Create one first</a>.</p>
+                                        {% endif %}
+                                    </div>
+                                    <div class="form-text">Select at least one base sample to include in this combo</div>
+                                </div>
+                            </div>
+                            <div id="componentError" class="invalid-feedback d-block" style="display: none !important;">
+                                Please select at least one component sample.
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="{{ form.notes.id_for_label }}" class="form-label">Notes</label>
+                            <textarea class="form-control {% if form.notes.errors %}is-invalid{% endif %}"
+                                      id="{{ form.notes.id_for_label }}"
+                                      name="{{ form.notes.name }}"
+                                      rows="3">{{ form.notes.value|default:'' }}</textarea>
+                            <div class="form-text">Additional notes</div>
+                            {% if form.notes.errors %}
+                                <div class="invalid-feedback">{{ form.notes.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="alert alert-info" id="duplicateWarning" style="display: none;">
+                            <i class="bi bi-info-circle"></i>
+                            <strong>Duplicate Detection:</strong>
+                            <span id="duplicateMessage"></span>
+                        </div>
+
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle"></i> Create Combo Sample
+                            </button>
+                            <a href="{% url 'irradiation:combo_sample_list' %}" class="btn btn-secondary">
+                                <i class="bi bi-x-circle"></i> Cancel
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card bg-light mb-3">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="bi bi-info-circle"></i> About Combo Samples</h5>
+                    <ul class="small mb-0">
+                        <li>Combo samples are combinations of two or more base samples</li>
+                        <li>When a combo is irradiated, all component samples track that irradiation</li>
+                        <li>The system will warn you if a combo with the same components already exists</li>
+                        <li>Example: Aluminum foil + Copper foil combined for joint irradiation</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <strong>Selected Components</strong>
+                </div>
+                <div class="card-body">
+                    <div id="selectedComponents">
+                        <p class="text-muted small mb-0">No components selected yet</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Component search functionality
+    document.getElementById('componentSearch').addEventListener('input', function(e) {
+        const searchTerm = e.target.value.toLowerCase();
+        const items = document.querySelectorAll('.component-item');
+
+        items.forEach(item => {
+            const text = item.textContent.toLowerCase();
+            item.style.display = text.includes(searchTerm) ? 'block' : 'none';
+        });
+    });
+
+    // Update selected components display
+    function updateSelectedComponents() {
+        const checkboxes = document.querySelectorAll('input[name="components"]:checked');
+        const selectedDiv = document.getElementById('selectedComponents');
+
+        if (checkboxes.length === 0) {
+            selectedDiv.innerHTML = '<p class="text-muted small mb-0">No components selected yet</p>';
+        } else {
+            let html = '<ul class="list-unstyled mb-0">';
+            checkboxes.forEach(checkbox => {
+                const label = checkbox.nextElementSibling;
+                const sampleId = checkbox.closest('.component-item').dataset.sampleId;
+                html += `<li class="small"><i class="bi bi-check-circle text-success"></i> ${sampleId}</li>`;
+            });
+            html += '</ul>';
+            selectedDiv.innerHTML = html;
+        }
+    }
+
+    // Listen for checkbox changes
+    document.querySelectorAll('input[name="components"]').forEach(checkbox => {
+        checkbox.addEventListener('change', updateSelectedComponents);
+    });
+
+    // Form validation
+    document.getElementById('comboForm').addEventListener('submit', function(e) {
+        const checkboxes = document.querySelectorAll('input[name="components"]:checked');
+        const errorDiv = document.getElementById('componentError');
+
+        if (checkboxes.length === 0) {
+            e.preventDefault();
+            errorDiv.style.display = 'block';
+            errorDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+            errorDiv.style.display = 'none';
+        }
+    });
+</script>
+{% endblock %}

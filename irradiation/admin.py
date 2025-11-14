@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import IrradiationRequestForm, SampleIrradiationLog
+from .models import IrradiationRequestForm, SampleIrradiationLog, Sample, SampleComponent
 
 
 class SampleIrradiationLogInline(admin.TabularInline):
@@ -8,7 +8,7 @@ class SampleIrradiationLogInline(admin.TabularInline):
     model = SampleIrradiationLog
     extra = 1
     fields = [
-        'irradiation_date', 'sample_id', 'experimenter_name',
+        'irradiation_date', 'sample', 'sample_id_text', 'experimenter_name',
         'actual_location', 'actual_power', 'time_in', 'time_out',
         'total_time', 'total_time_unit', 'measured_dose_rate',
         'decay_time', 'decay_time_unit', 'operator_initials'
@@ -161,7 +161,7 @@ class SampleIrradiationLogAdmin(admin.ModelAdmin):
     """Admin interface for individual Sample Irradiation Logs"""
 
     list_display = [
-        'sample_id',
+        'get_sample_id',
         'irf_link',
         'irradiation_date',
         'experimenter_name',
@@ -179,7 +179,8 @@ class SampleIrradiationLogAdmin(admin.ModelAdmin):
     ]
 
     search_fields = [
-        'sample_id',
+        'sample_id_text',
+        'sample__sample_id',
         'irf__irf_number',
         'experimenter_name',
     ]
@@ -192,7 +193,9 @@ class SampleIrradiationLogAdmin(admin.ModelAdmin):
         }),
         ('Sample Information', {
             'fields': (
-                ('irradiation_date', 'sample_id'),
+                'irradiation_date',
+                'sample',
+                'sample_id_text',
                 'experimenter_name',
             )
         }),
@@ -241,6 +244,110 @@ class SampleIrradiationLogAdmin(admin.ModelAdmin):
         else:
             return format_html('<span style="color: red;">⚠ Exceeds Limits</span>')
     within_limits_display.short_description = 'Limits Check'
+
+
+# Sample Admin
+
+class SampleComponentInline(admin.TabularInline):
+    """Inline admin for Sample Components"""
+    model = SampleComponent
+    fk_name = 'combo_sample'
+    extra = 1
+    fields = ['component_sample', 'order']
+    verbose_name = 'Component'
+    verbose_name_plural = 'Components'
+
+
+@admin.register(Sample)
+class SampleAdmin(admin.ModelAdmin):
+    """Admin interface for Samples"""
+
+    list_display = [
+        'sample_id',
+        'name',
+        'material_type',
+        'physical_form',
+        'mass_display',
+        'is_combo',
+        'total_irradiations',
+        'created_date',
+    ]
+
+    list_filter = [
+        'is_combo',
+        'physical_form',
+        'material_type',
+        'created_date',
+    ]
+
+    search_fields = [
+        'sample_id',
+        'name',
+        'material_type',
+        'description',
+    ]
+
+    readonly_fields = ['created_date', 'updated_date']
+
+    fieldsets = (
+        ('Sample Identification', {
+            'fields': (
+                'sample_id',
+                'name',
+                'is_combo',
+                ('created_date', 'updated_date'),
+            )
+        }),
+        ('Sample Properties', {
+            'fields': (
+                'material_type',
+                'physical_form',
+                ('mass', 'mass_unit'),
+                'dimensions',
+            )
+        }),
+        ('Description & Notes', {
+            'fields': (
+                'description',
+                'notes',
+            )
+        }),
+    )
+
+    inlines = []
+
+    def get_inlines(self, request, obj=None):
+        """Show component inline only for combo samples"""
+        if obj and obj.is_combo:
+            return [SampleComponentInline]
+        return []
+
+    def mass_display(self, obj):
+        """Display mass with unit"""
+        if obj.mass:
+            return f"{obj.mass} {obj.get_mass_unit_display()}"
+        return "-"
+    mass_display.short_description = 'Mass'
+
+
+@admin.register(SampleComponent)
+class SampleComponentAdmin(admin.ModelAdmin):
+    """Admin interface for Sample Components"""
+
+    list_display = [
+        'combo_sample',
+        'component_sample',
+        'order',
+    ]
+
+    list_filter = [
+        'combo_sample__is_combo',
+    ]
+
+    search_fields = [
+        'combo_sample__sample_id',
+        'component_sample__sample_id',
+    ]
 
 
 # Customize admin site headers
