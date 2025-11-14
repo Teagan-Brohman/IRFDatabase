@@ -59,6 +59,25 @@ python create_sample_data.py
 - Automatically validates against IRF limits via `within_limits()` method
 - Calculates neutron fluence (kW-hrs) via `fluence()` method
 
+**Sample**: Tracks individual samples with composition and irradiation history
+- Supports both base samples and combo samples (assemblies of multiple samples)
+- Links to `SampleIrradiationLog` entries for complete irradiation history
+- `SampleComposition` model stores elemental/isotopic composition
+- Used for neutron activation analysis calculations
+- Key fields:
+  - `is_combo`: Boolean flag for combo samples
+  - `material_type`: Description of material
+  - `mass`/`mass_unit`: Sample mass with units (g, mg, kg)
+
+**FluxConfiguration**: Stores neutron flux data for each irradiation location
+- Thermal flux (E < 0.5 eV), Fast flux (E > 0.1 MeV), Intermediate flux (optional)
+- Reference power for flux measurements (default 200 kW)
+- `get_scaled_fluxes(power_kw)`: Linearly scales flux to different power levels
+- **Scientific Notation Input**: Admin form provides mantissa/exponent fields
+  - Enter "2.5" and "12" instead of "2500000000000.00"
+  - Required for thermal and fast flux, optional for intermediate
+  - Automatic conversion on save
+
 ### View Architecture (irradiation/views.py)
 
 The application uses Django's class-based views:
@@ -69,6 +88,17 @@ The application uses Django's class-based views:
   - Amendment: Creates new version (new pk, increments version_number)
   - Fix: Updates in-place without versioning
 - `SampleLogCreateView`: Add irradiation logs
+- `SampleDetailView`: Displays sample with composition and activation results
+- `SampleCreateView`/`SampleUpdateView`: Sample management
+- `ComboSampleCreateView`: Create combo samples with component selection
+
+**API Endpoints**:
+- `irf_autocomplete`: JSON autocomplete for IRF selection
+- `sample_autocomplete`: JSON autocomplete for sample selection
+- `calculate_sample_isotopics`: Neutron activation analysis calculation
+  - Query params: `use_multigroup`, `min_fraction`, `use_cache`
+  - Returns isotopic inventory, activities, dose rates
+  - Includes warning for skipped irradiations due to missing flux configs
 
 ### URL Structure (irradiation/urls.py)
 - `/` - Home dashboard
@@ -77,7 +107,13 @@ The application uses Django's class-based views:
 - `/irf/new/` - Create IRF
 - `/irf/<pk>/edit/` - Edit IRF
 - `/sample-log/new/` - Create sample log
-- `/api/irf-autocomplete/` - JSON endpoint for autocomplete
+- `/sample/<pk>/` - Sample detail with activation analysis
+- `/sample/new/` - Create base sample
+- `/sample/<pk>/edit/` - Edit sample
+- `/sample/combo/new/` - Create combo sample
+- `/api/irf-autocomplete/` - JSON endpoint for IRF autocomplete
+- `/api/sample-autocomplete/` - JSON endpoint for sample autocomplete
+- `/api/sample/<pk>/calculate-isotopics/` - Neutron activation calculation API
 
 ### Templates
 
@@ -88,6 +124,13 @@ Key templates in `irradiation/templates/irradiation/`:
   - Uses Django template syntax: `{% if %}...{% endif %}` NOT Python ternary operators
 - `irf_detail.html`: Tabbed interface for IRF details and logs
 - `irf_list.html`: Search/filter interface with pagination
+- `sample_detail.html`: Sample view with activation analysis results
+  - Displays sample composition and irradiation history
+  - "Calculate Isotopics" button triggers AJAX request to API
+  - Shows warning banner for skipped irradiations (missing flux configs)
+  - Interactive isotope table with activity filtering
+  - Plotly.js graphs for decay curves
+  - Unit toggle (Bq/Ci) for activities
 
 **CRITICAL**: When editing templates, always use Django template syntax:
 - Correct: `{% if object %}true{% else %}false{% endif %}`
@@ -100,6 +143,14 @@ Custom admin with:
 - Organized fieldsets matching SOP 702 structure
 - Color-coded status badges
 - Advanced filtering and search
+- **FluxConfigurationAdmin**: Custom form with scientific notation input
+  - `FluxConfigurationAdminForm` with mantissa/exponent fields
+  - Automatic pre-population when editing existing values
+  - `clean()` method calculates full decimal from M×10^E
+  - Readonly display of calculated flux values
+- **SampleAdmin**: Inline composition editing
+  - Shows `SampleComponentInline` for combo samples
+  - `SampleCompositionInline` for elemental composition
 
 ## Key Business Logic
 
@@ -115,6 +166,37 @@ SOP 702 requires two approvals from:
 - Director, Manager, SRO, or Health Physicist
 - Both `approver1_date` and `approver2_date` must be set
 - Check via `is_approved()` method
+
+### Neutron Activation Analysis (irradiation/activation.py)
+
+**NeutronActivationCalculator**: Calculates isotopic inventory and activities
+- Processes complete irradiation history for a sample
+- Accounts for:
+  - Neutron activation during irradiation (φ × σ × t)
+  - Radioactive decay between irradiations
+  - Sequential chaining of multiple irradiations
+  - Multi-group neutron spectrum (thermal/fast/intermediate)
+
+**Key Features**:
+- **PyNE Integration**: Uses PyNE nuclear data library for cross-sections when available
+- **Spectrum-averaged cross-sections**: Flux-weighted average across energy groups
+- **Decay chains**: Uses radioactivedecay library for proper decay calculations
+- **Fallback mode**: Simplified cross-section database for common elements (Au, Co, etc.)
+- **Caching**: SHA256 hash-based caching to avoid redundant calculations
+  - Hash includes sample composition + all irradiation parameters
+  - Cached results stored in `ActivationResult` model
+
+**Warning System for Missing Flux Configurations**:
+- Tracks irradiations skipped due to missing flux data
+- Returns list of skipped irradiations with details (date, location, power, time)
+- Frontend displays prominent warning banner
+- Shows "Results based on X of Y irradiations"
+- Guides user to configure flux in Admin → Flux configurations
+
+**Dependencies**:
+- `radioactivedecay`: Decay chain calculations
+- `PyNE` (optional): Multi-group cross-sections from nuclear data libraries
+- `numpy`, `scipy`: Numerical calculations
 
 ### Validation Rules
 - Sample logs must stay within IRF limits (power, time, mass)
@@ -133,8 +215,16 @@ Format: `YY-NNN` (e.g., `95-1`, `24-001`)
 - **Framework**: Django 5.0
 - **Database**: SQLite (db.sqlite3)
 - **Frontend**: Bootstrap 5 with custom JavaScript
+- **Visualization**: Plotly.js for interactive decay curves
 - **File Uploads**: Pillow for image handling
 - **Admin Tools**: django-import-export for bulk operations
+- **Scientific Computing**:
+  - `numpy` (≥1.24.0): Numerical calculations
+  - `scipy` (≥1.10.0): Advanced numerical methods
+  - `radioactivedecay` (≥0.4.0): Decay chain calculations
+  - `PyNE` (optional): Multi-group neutron cross-sections
+    - Best installed via conda: `conda install -c conda-forge pyne`
+    - pip installation requires Fortran compilers
 
 ## Special Considerations
 
@@ -157,6 +247,22 @@ The system is designed to accommodate incomplete historical records:
 - Many fields are optional to handle 30+ years of paper forms
 - Status can be set to "archived" for historical IRFs
 - Reference IRF numbers link related experiments
+
+### Flux Configuration and Scientific Notation
+**Admin Form Design** (irradiation/admin.py:362-525):
+- `FluxConfigurationAdminForm` provides user-friendly scientific notation input
+- Mantissa and exponent fields for each flux type (thermal, fast, intermediate)
+- Thermal and fast flux are **required** (database constraint)
+- Intermediate flux is **optional**
+- `__init__` method pre-populates fields when editing:
+  - Converts stored decimal (e.g., 2500000000000.00) to mantissa=2.5, exponent=12
+  - Uses `_decimal_to_scientific()` helper with log10 calculation
+- `clean()` method converts user input to decimal:
+  - Calculates: mantissa × 10^exponent
+  - Stores full decimal value in database
+- Actual flux fields shown as readonly for verification
+- **IMPORTANT**: If mantissa/exponent not provided, database will fail with NOT NULL constraint
+  - This is by design to ensure required flux values are always set
 
 ## Common Workflows
 
@@ -183,6 +289,34 @@ IRFListView supports:
 - Filters: status, physical form, year (parsed from IRF number)
 - Pagination (25 per page)
 - Results annotated with log count
+
+### Neutron Activation Analysis Workflow
+1. **Configure Flux Values** (Admin → Flux configurations):
+   - Select irradiation location (bare rabbit, cad rabbit, beam port, thermal column, other)
+   - Enter thermal flux: mantissa (e.g., 2.5) and exponent (e.g., 12) for 2.5×10¹² n/cm²/s
+   - Enter fast flux: mantissa and exponent
+   - Optionally enter intermediate flux
+   - System calculates full decimal value automatically
+2. **Create Sample** with composition:
+   - Define elemental/isotopic composition via `SampleComposition` inline
+   - For combo samples, link component samples
+3. **Link Irradiations**:
+   - Sample irradiation logs reference the sample
+   - Complete irradiation history tracked (location, power, time, date)
+4. **Calculate Isotopics**:
+   - Navigate to sample detail page
+   - Click "Calculate Isotopics" button
+   - System processes irradiation history sequentially
+   - If flux config missing for any location, warning displayed
+   - Results show:
+     - Total activity (Bq/Ci with toggle)
+     - Estimated dose rate at 1 foot
+     - Isotope table with activities, half-lives, fractions
+     - Interactive decay curves (Plotly)
+5. **Results Caching**:
+   - Hash calculated from composition + irradiation history
+   - Cached in `ActivationResult` model
+   - Subsequent requests use cache if irradiation history unchanged
 
 ## Database Schema Notes
 
