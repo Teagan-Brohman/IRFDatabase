@@ -432,11 +432,22 @@ class SampleIrradiationLog(models.Model):
     )
 
     # 8. Total Time
+    TIME_UNIT_CHOICES = [
+        ('min', 'minutes'),
+        ('hr', 'hours'),
+        ('sec', 'seconds'),
+    ]
     total_time = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(0)],
-        help_text="Total irradiation time (minutes)"
+        help_text="Total irradiation time"
+    )
+    total_time_unit = models.CharField(
+        max_length=10,
+        choices=TIME_UNIT_CHOICES,
+        default='min',
+        help_text="Unit for total time"
     )
 
     # 9. Dose Rate @ 1 foot
@@ -452,7 +463,13 @@ class SampleIrradiationLog(models.Model):
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(0)],
-        help_text="Approximate decay time (minutes) between end of irradiation and dose rate measurement"
+        help_text="Approximate decay time between end of irradiation and dose rate measurement"
+    )
+    decay_time_unit = models.CharField(
+        max_length=10,
+        choices=TIME_UNIT_CHOICES,
+        default='min',
+        help_text="Unit for decay time"
     )
 
     # 11. Initials

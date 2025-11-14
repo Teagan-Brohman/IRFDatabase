@@ -10,7 +10,8 @@ class SampleIrradiationLogInline(admin.TabularInline):
     fields = [
         'irradiation_date', 'sample_id', 'experimenter_name',
         'actual_location', 'actual_power', 'time_in', 'time_out',
-        'total_time', 'measured_dose_rate', 'decay_time', 'operator_initials'
+        'total_time', 'total_time_unit', 'measured_dose_rate',
+        'decay_time', 'decay_time_unit', 'operator_initials'
     ]
     classes = ['collapse']
 
@@ -198,13 +199,15 @@ class SampleIrradiationLogAdmin(admin.ModelAdmin):
         ('Irradiation Details', {
             'fields': (
                 'actual_location',
-                ('actual_power', 'total_time'),
+                'actual_power',
                 ('time_in', 'time_out'),
+                ('total_time', 'total_time_unit'),
             )
         }),
         ('Dose Measurements', {
             'fields': (
-                ('measured_dose_rate', 'decay_time'),
+                'measured_dose_rate',
+                ('decay_time', 'decay_time_unit'),
             )
         }),
         ('Operator & Notes', {
