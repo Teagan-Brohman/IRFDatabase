@@ -425,6 +425,7 @@
                                                             <th>Dose Rate @ 1 ft (mR/hR)</th>
                                                             <th>Decay Time</th>
                                                             <th>Initials</th>
+                                                            <th>Actions</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
@@ -440,10 +441,18 @@
                                                                 <td>{{ log.measured_dose_rate }}</td>
                                                                 <td>{{ log.decay_time }} {{ log.get_decay_time_unit_display }}</td>
                                                                 <td>{{ log.operator_initials }}</td>
+                                                                <td class="actions-cell">
+                                                                    <a href="{% url 'irradiation:sample_log_update' log.pk %}" class="btn btn-sm btn-outline-primary" title="Edit">
+                                                                        <i class="bi bi-pencil"></i>
+                                                                    </a>
+                                                                    <a href="{% url 'irradiation:sample_log_delete' log.pk %}" class="btn btn-sm btn-outline-danger" title="Delete">
+                                                                        <i class="bi bi-trash"></i>
+                                                                    </a>
+                                                                </td>
                                                             </tr>
                                                             {% if log.notes %}
                                                                 <tr class="notes-row">
-                                                                    <td colspan="10" class="bg-light">
+                                                                    <td colspan="11" class="bg-light">
                                                                         <small><strong>Notes:</strong> {{ log.notes }}</small>
                                                                     </td>
                                                                 </tr>
@@ -510,8 +519,22 @@
         font-style: italic;
     }
 
+    .actions-cell {
+        white-space: nowrap;
+    }
+
+    .actions-cell .btn {
+        padding: 0.25rem 0.5rem;
+        margin: 0 2px;
+    }
+
     /* Print Styles - Match SOP 702 Format */
     @media print {
+        /* Hide actions column in print */
+        .actions-cell,
+        th:last-child {
+            display: none !important;
+        }
         /* Hide navigation and buttons */
         .btn, .nav-tabs, .accordion-button {
             display: none !important;
