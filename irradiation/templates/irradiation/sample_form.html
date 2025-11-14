@@ -167,7 +167,8 @@
 
                                 <div id="composition-forms">
                                     {% for comp_form in composition_formset %}
-                                        <div class="composition-form row g-2 mb-2 align-items-center">
+                                        {% if not comp_form.DELETE.value %}
+                                        <div class="composition-form row g-2 mb-2 align-items-center" data-form-index="{{ forloop.counter0 }}">
                                             <div class="col-md-2">
                                                 <label class="form-label small">Element</label>
                                                 {{ comp_form.element }}
@@ -193,21 +194,22 @@
                                             <div class="col-md-2">
                                                 {{ comp_form.order }}
                                                 {{ comp_form.id }}
-                                                {% if comp_form.instance.pk %}
-                                                    <label class="form-label small">Delete</label>
-                                                    <div class="form-check">
-                                                        {{ comp_form.DELETE }}
-                                                    </div>
-                                                {% else %}
-                                                    <label class="form-label small">&nbsp;</label>
-                                                    <button type="button" class="btn btn-sm btn-outline-danger w-100" onclick="removeCompositionRow(this)">
-                                                        <i class="bi bi-trash"></i>
-                                                    </button>
-                                                {% endif %}
+                                                <div style="display: none;">{{ comp_form.DELETE }}</div>
+                                                <label class="form-label small">&nbsp;</label>
+                                                <button type="button" class="btn btn-sm btn-outline-danger w-100" onclick="removeCompositionRow(this)">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
                                             </div>
                                         </div>
+                                        {% endif %}
                                     {% endfor %}
                                 </div>
+
+                                {% if not composition_formset.forms %}
+                                <div class="text-muted text-center py-3" id="no-compositions-message">
+                                    <i class="bi bi-info-circle"></i> No compositions defined yet. Click "Add Element" to get started.
+                                </div>
+                                {% endif %}
 
                                 <div class="text-muted small mt-2">
                                     <i class="bi bi-info-circle"></i> Add chemical elements that make up this sample.
@@ -298,16 +300,13 @@ function autoFillComposition() {
     const element = materialToElement[materialType];
 
     if (element) {
-        // Clear ALL existing composition forms
+        // Clear ALL existing composition forms (mark for deletion and hide)
         const forms = document.querySelectorAll('.composition-form');
         forms.forEach((form) => {
-            // Mark for deletion if it has an id, otherwise remove
-            const deleteCheckbox = form.querySelector('input[type="checkbox"][name$="-DELETE"]');
+            const deleteCheckbox = form.querySelector('input[name$="-DELETE"]');
             if (deleteCheckbox) {
                 deleteCheckbox.checked = true;
                 form.style.display = 'none';
-            } else {
-                form.remove();
             }
         });
 
@@ -315,16 +314,18 @@ function autoFillComposition() {
         addCompositionRow();
 
         // Fill the new form with 100% of the element
-        const forms2 = document.querySelectorAll('.composition-form');
-        const lastForm = forms2[forms2.length - 1];
+        const visibleForms = Array.from(document.querySelectorAll('.composition-form')).filter(f => f.style.display !== 'none');
+        const lastForm = visibleForms[visibleForms.length - 1];
 
-        const elementInput = lastForm.querySelector('input[name$="-element"]');
-        const fractionInput = lastForm.querySelector('input[name$="-fraction"]');
-        const typeSelect = lastForm.querySelector('select[name$="-composition_type"]');
+        if (lastForm) {
+            const elementInput = lastForm.querySelector('input[name$="-element"]');
+            const fractionInput = lastForm.querySelector('input[name$="-fraction"]');
+            const typeSelect = lastForm.querySelector('select[name$="-composition_type"]');
 
-        if (elementInput) elementInput.value = element;
-        if (fractionInput) fractionInput.value = '100.00';
-        if (typeSelect) typeSelect.value = 'wt';
+            if (elementInput) elementInput.value = element;
+            if (fractionInput) fractionInput.value = '100.00';
+            if (typeSelect) typeSelect.value = 'wt';
+        }
     } else {
         alert(`Material type "${materialType}" is not recognized. Known materials: ${Object.keys(materialToElement).join(', ')}`);
     }
@@ -335,7 +336,7 @@ function addCompositionRow() {
     const totalForms = document.getElementById('id_composition_elements-TOTAL_FORMS');
     const formCount = parseInt(totalForms.value);
 
-    // Create new form HTML manually to avoid issues with empty template
+    // Create new form HTML with DELETE checkbox (hidden) for consistency
     const newFormHTML = `
         <div class="composition-form row g-2 mb-2 align-items-center">
             <div class="col-md-2">
@@ -360,6 +361,7 @@ function addCompositionRow() {
             <div class="col-md-2">
                 <input type="hidden" name="composition_elements-${formCount}-order" value="0" id="id_composition_elements-${formCount}-order">
                 <input type="hidden" name="composition_elements-${formCount}-id" id="id_composition_elements-${formCount}-id">
+                <input type="checkbox" name="composition_elements-${formCount}-DELETE" id="id_composition_elements-${formCount}-DELETE" style="display: none;">
                 <label class="form-label small">&nbsp;</label>
                 <button type="button" class="btn btn-sm btn-outline-danger w-100" onclick="removeCompositionRow(this)">
                     <i class="bi bi-trash"></i>
@@ -378,37 +380,11 @@ function addCompositionRow() {
 function removeCompositionRow(button) {
     const form = button.closest('.composition-form');
 
-    // Check if this is an existing record (has a DELETE checkbox)
-    const deleteCheckbox = form.querySelector('input[type="checkbox"][name$="-DELETE"]');
+    // All forms now have DELETE checkbox (hidden), so just mark for deletion and hide
+    const deleteCheckbox = form.querySelector('input[name$="-DELETE"]');
     if (deleteCheckbox) {
-        // Mark for deletion and hide
         deleteCheckbox.checked = true;
         form.style.display = 'none';
-    } else {
-        // New unsaved row, just remove it from DOM
-        form.remove();
-        updateFormsetCount();
-    }
-}
-
-function updateFormsetCount() {
-    const forms = document.querySelectorAll('.composition-form');
-    const totalForms = document.getElementById('id_composition_elements-TOTAL_FORMS');
-    let visibleCount = 0;
-
-    forms.forEach((form, index) => {
-        const deleteCheckbox = form.querySelector('input[type="checkbox"][name$="-DELETE"]');
-        if (!deleteCheckbox || !deleteCheckbox.checked) {
-            if (form.style.display !== 'none') {
-                visibleCount++;
-            }
-        }
-    });
-
-    // Don't update if we're removing forms - Django will handle it
-    // Just ensure we have at least the right count
-    if (visibleCount > parseInt(totalForms.value)) {
-        totalForms.value = visibleCount;
     }
 }
 </script>
