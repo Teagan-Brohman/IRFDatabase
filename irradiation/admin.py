@@ -367,7 +367,7 @@ class FluxConfigurationAdminForm(forms.ModelForm):
 
     # Thermal flux scientific notation fields
     thermal_flux_mantissa = forms.DecimalField(
-        required=False,
+        required=True,
         max_digits=5,
         decimal_places=2,
         initial=1.0,
@@ -375,7 +375,7 @@ class FluxConfigurationAdminForm(forms.ModelForm):
         help_text="e.g., 2.5 for 2.5×10ⁿ"
     )
     thermal_flux_exponent = forms.IntegerField(
-        required=False,
+        required=True,
         initial=12,
         label="×10^",
         help_text="e.g., 12 for ×10¹²"
@@ -383,7 +383,7 @@ class FluxConfigurationAdminForm(forms.ModelForm):
 
     # Fast flux scientific notation fields
     fast_flux_mantissa = forms.DecimalField(
-        required=False,
+        required=True,
         max_digits=5,
         decimal_places=2,
         initial=1.0,
@@ -391,7 +391,7 @@ class FluxConfigurationAdminForm(forms.ModelForm):
         help_text="e.g., 5.0 for 5.0×10ⁿ"
     )
     fast_flux_exponent = forms.IntegerField(
-        required=False,
+        required=True,
         initial=11,
         label="×10^",
         help_text="e.g., 11 for ×10¹¹"
@@ -475,6 +475,32 @@ class FluxConfigurationAdminForm(forms.ModelForm):
             cleaned_data['intermediate_flux'] = intermediate_flux
 
         return cleaned_data
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+
+        # Calculate and set flux values from mantissa × 10^exponent
+        # This is necessary because the flux fields are marked as readonly in admin
+        # and won't be included in the form data
+        thermal_mantissa = self.cleaned_data.get('thermal_flux_mantissa')
+        thermal_exponent = self.cleaned_data.get('thermal_flux_exponent')
+        if thermal_mantissa is not None and thermal_exponent is not None:
+            instance.thermal_flux = Decimal(thermal_mantissa) * Decimal(10 ** thermal_exponent)
+
+        fast_mantissa = self.cleaned_data.get('fast_flux_mantissa')
+        fast_exponent = self.cleaned_data.get('fast_flux_exponent')
+        if fast_mantissa is not None and fast_exponent is not None:
+            instance.fast_flux = Decimal(fast_mantissa) * Decimal(10 ** fast_exponent)
+
+        # Intermediate flux is optional
+        intermediate_mantissa = self.cleaned_data.get('intermediate_flux_mantissa')
+        intermediate_exponent = self.cleaned_data.get('intermediate_flux_exponent')
+        if intermediate_mantissa is not None and intermediate_exponent is not None:
+            instance.intermediate_flux = Decimal(intermediate_mantissa) * Decimal(10 ** intermediate_exponent)
+
+        if commit:
+            instance.save()
+        return instance
 
 
 @admin.register(FluxConfiguration)
