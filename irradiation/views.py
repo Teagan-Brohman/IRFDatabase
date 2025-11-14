@@ -128,11 +128,13 @@ class IRFUpdateView(UpdateView):
         change_notes = self.request.POST.get('change_notes', '')
 
         if change_type == 'amendment':
+            # Get a fresh copy of the original IRF from database BEFORE form modifies self.object
+            old_irf = IrradiationRequestForm.objects.get(pk=self.object.pk)
+
             # Create a new version (amendment)
-            old_irf = self.object
             new_irf = form.save(commit=False)
             new_irf.pk = None  # Create new object
-            new_irf.parent_version = old_irf
+            new_irf.parent_version = old_irf  # Now points to saved instance from DB
             new_irf.version_number = old_irf.version_number + 1
             new_irf.change_type = 'amendment'
             new_irf.change_notes = change_notes
