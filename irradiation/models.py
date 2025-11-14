@@ -12,7 +12,6 @@ class IrradiationRequestForm(models.Model):
     # IRF Identification
     irf_number = models.CharField(
         max_length=20,
-        unique=True,
         help_text="Sequential number following last two digits of year (e.g. 95-1, 95-2)"
     )
     created_date = models.DateField(auto_now_add=True)
@@ -325,12 +324,14 @@ class IrradiationRequestForm(models.Model):
     )
 
     class Meta:
-        ordering = ['-irf_number']
+        ordering = ['-irf_number', '-version_number']
         verbose_name = 'Irradiation Request Form'
         verbose_name_plural = 'Irradiation Request Forms'
+        unique_together = [['irf_number', 'version_number']]
 
     def __str__(self):
-        return f"IRF {self.irf_number} - {self.sample_description[:50]}"
+        version_str = f" (v{self.version_number})" if self.version_number > 1 else ""
+        return f"IRF {self.irf_number}{version_str} - {self.sample_description[:50]}"
 
     def get_absolute_url(self):
         return reverse('irradiation:irf_detail', kwargs={'pk': self.pk})

@@ -20,9 +20,13 @@ class IRFListView(ListView):
     paginate_by = 25
 
     def get_queryset(self):
-        """Filter IRFs based on search query"""
-        queryset = IrradiationRequestForm.objects.all().annotate(
-            num_logs=Count('irradiation_logs')
+        """Filter IRFs based on search query - show only latest versions"""
+        # Exclude IRFs that have been amended (i.e., have child amendments)
+        # This ensures only the latest version of each IRF is shown
+        queryset = IrradiationRequestForm.objects.filter(
+            amendments__isnull=True  # No amendments means this is the latest version
+        ).annotate(
+            num_logs=Count('irradiation_logs', distinct=True)
         )
 
         # Search functionality
@@ -132,6 +136,7 @@ class IRFUpdateView(UpdateView):
             old_irf = self.object
             new_irf = form.save(commit=False)
             new_irf.pk = None  # Create new object
+            new_irf.irf_number = old_irf.irf_number  # Keep the same IRF number
             new_irf.parent_version = old_irf
             new_irf.version_number = old_irf.version_number + 1
             new_irf.change_type = 'amendment'
@@ -245,12 +250,14 @@ def home(request):
     """
     Home page with search bar and statistics
     """
-    total_irfs = IrradiationRequestForm.objects.count()
-    approved_irfs = IrradiationRequestForm.objects.filter(status='approved').count()
+    # Only count latest versions (IRFs without amendments)
+    latest_irfs = IrradiationRequestForm.objects.filter(amendments__isnull=True)
+    total_irfs = latest_irfs.count()
+    approved_irfs = latest_irfs.filter(status='approved').count()
     total_logs = SampleIrradiationLog.objects.count()
 
-    # Recent IRFs
-    recent_irfs = IrradiationRequestForm.objects.all().order_by('-created_date')[:5]
+    # Recent IRFs (latest versions only)
+    recent_irfs = latest_irfs.order_by('-created_date')[:5]
 
     # Recent irradiations
     recent_logs = SampleIrradiationLog.objects.all().order_by('-irradiation_date')[:5]
@@ -269,15 +276,17 @@ def home(request):
 def irf_autocomplete(request):
     """
     API endpoint for IRF number autocomplete
-    Returns matching IRF numbers and basic info
+    Returns matching IRF numbers and basic info (latest versions only)
     """
     query = request.GET.get('q', '').strip()
 
     if len(query) < 2:
         return JsonResponse({'results': []})
 
+    # Only return latest versions (IRFs without amendments)
     irfs = IrradiationRequestForm.objects.filter(
-        irf_number__icontains=query
+        irf_number__icontains=query,
+        amendments__isnull=True
     )[:10]
 
     results = [
