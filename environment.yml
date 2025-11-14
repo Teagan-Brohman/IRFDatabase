@@ -3,26 +3,31 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  # Python version
-  - python>=3.10
+  # Python version - PyNE supports Python 3.8-3.9 (last updated 2021)
+  # Using 3.8 minimum for modern NumPy/SciPy, 3.9 maximum for PyNE compatibility
+  - python>=3.8,<3.10
 
-  # Django and web framework
-  - django>=5.0,<5.1
-  - django-crispy-forms>=2.1
-  - crispy-bootstrap5>=2.0
-  - django-filter>=23.5
-  - django-import-export>=3.3
+  # Django 3.2 LTS - supports Python 3.6-3.10 (Django 5.0+ requires Python 3.10+)
+  - django>=3.2,<3.3
+  - django-crispy-forms>=1.11,<2.0
+  - crispy-bootstrap5>=0.6,<1.0
+  - django-filter>=21.1,<24.0
+  - django-import-export>=2.7,<4.0
 
   # Utilities
   - python-dateutil>=2.8
-  - pillow>=10.0
+  # Pillow 8.x-10.x supports Python 3.8-3.9
+  - pillow>=8.0,<11.0
 
   # Scientific computing and nuclear data
-  - numpy>=1.24.0
-  - scipy>=1.10.0
+  # NumPy 1.20+ requires Python 3.8+
+  - numpy>=1.20.0,<1.27.0
+  # SciPy 1.5+ works with Python 3.8+
+  - scipy>=1.5.0,<1.12.0
   - radioactivedecay>=0.4.0
 
   # PyNE - Nuclear data and cross-sections (conda-forge recommended)
+  # PyNE v0.7.5 works best with Python 3.8-3.9
   - pyne
 
   # Development tools (optional)
@@ -34,6 +39,9 @@ dependencies:
 
 description: >
   IRF Database environment with PyNE for neutron activation analysis.
+
+  Python 3.8-3.9 compatible environment (PyNE requirement).
+  Uses Django 3.2 LTS for compatibility with Python 3.8-3.9.
 
   To create this environment:
     conda env create -f environment.yml

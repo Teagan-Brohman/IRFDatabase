@@ -1,17 +1,25 @@
-Django>=5.0,<5.1
-django-crispy-forms>=2.1
-crispy-bootstrap5>=2.0
-django-filter>=23.5
-django-import-export>=3.3
+# Python 3.8-3.9 compatible versions for PyNE support
+# PyNE works best with Python 3.8-3.9 (last updated 2021)
+
+# Django 3.2 LTS - supports Python 3.6-3.10 (Django 5.0+ requires Python 3.10+)
+Django>=3.2,<3.3
+django-crispy-forms>=1.11,<2.0
+crispy-bootstrap5>=0.6,<1.0
+django-filter>=21.1,<24.0
+django-import-export>=2.7,<4.0
 python-dateutil>=2.8
-Pillow>=10.0
+# Pillow 8.x-10.x supports Python 3.8-3.9
+Pillow>=8.0,<11.0
 radioactivedecay>=0.4.0
-numpy>=1.24.0
-scipy>=1.10.0
+# NumPy 1.20+ requires Python 3.8+, <1.27 for stability with older Python
+numpy>=1.20.0,<1.27.0
+# SciPy 1.5+ works with Python 3.8+
+scipy>=1.5.0,<1.12.0
 
 # PyNE for multi-group neutron cross-sections and nuclear data
 # NOTE: PyNE is best installed via conda-forge:
 #   conda install -c conda-forge pyne
+# PyNE supports Python 3.8-3.9 (last updated 2021, v0.7.5)
 # If pip installation is required, you may need Fortran compilers (gfortran)
 # See: https://pyne.io/install/index.html
 pyne
