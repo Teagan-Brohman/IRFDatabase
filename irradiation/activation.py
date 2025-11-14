@@ -160,7 +160,7 @@ class ActivationCalculator:
                 if not flux_config:
                     logger.warning(f"No flux configuration for location {log.actual_location}. Skipping irradiation.")
                     skipped_irradiations.append({
-                        'date': log.irradiation_date.isoformat(),
+                        'date': log.irradiation_date.isoformat() if log.irradiation_date else 'Unknown',
                         'location': log.actual_location,
                         'power': float(log.actual_power),
                         'time': float(log.total_time),
@@ -173,6 +173,19 @@ class ActivationCalculator:
                 inventory, reference_time = self._process_irradiation(
                     inventory, log, flux_config, reference_time
                 )
+
+            # Check if all irradiations were skipped
+            if reference_time is None:
+                error_msg = "All irradiations were skipped. Please ensure flux configurations exist for the irradiation locations."
+                logger.warning(f"{error_msg} Skipped: {skipped_irradiations}")
+                return {
+                    'calculation_successful': False,
+                    'error_message': error_msg,
+                    'isotopes': {},
+                    'total_activity_bq': 0.0,
+                    'irradiation_hash': irr_hash,
+                    'skipped_irradiations': skipped_irradiations,
+                }
 
             # Convert inventory to activities at reference time
             results = self._calculate_activities(inventory, reference_time, min_activity_fraction)
