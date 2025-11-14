@@ -5,3 +5,13 @@ django-filter>=23.5
 django-import-export>=3.3
 python-dateutil>=2.8
 Pillow>=10.0
+radioactivedecay>=0.4.0
+numpy>=1.24.0
+scipy>=1.10.0
+
+# PyNE for multi-group neutron cross-sections and nuclear data
+# NOTE: PyNE is best installed via conda-forge:
+#   conda install -c conda-forge pyne
+# If pip installation is required, you may need Fortran compilers (gfortran)
+# See: https://pyne.io/install/index.html
+pyne

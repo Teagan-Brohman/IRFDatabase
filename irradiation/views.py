@@ -544,3 +544,137 @@ def sample_autocomplete(request):
     ]
 
     return JsonResponse({'results': results})
+
+
+# ========================================
+# ACTIVATION ANALYSIS VIEWS
+# ========================================
+
+def calculate_sample_isotopics(request, pk):
+    """
+    Calculate isotopic inventory for a sample based on irradiation history
+
+    Args:
+        request: HTTP request
+        pk: Sample primary key
+
+    Returns:
+        JsonResponse with calculation results
+    """
+    from .models import FluxConfiguration, ActivationResult
+    from .activation import ActivationCalculator
+    from datetime import datetime
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        sample = get_object_or_404(Sample, pk=pk)
+
+        # Get all irradiation logs for this sample (chronological order)
+        logs = sample.get_irradiation_logs().order_by('irradiation_date', 'time_in')
+
+        if not logs.exists():
+            return JsonResponse({
+                'success': False,
+                'error': 'No irradiation history found for this sample.'
+            }, status=400)
+
+        # Get flux configurations
+        flux_configs = {}
+        for config in FluxConfiguration.objects.all():
+            flux_configs[config.location] = config
+
+        if not flux_configs:
+            return JsonResponse({
+                'success': False,
+                'error': 'No flux configurations found. Please configure flux values in Admin.'
+            }, status=400)
+
+        # Get calculation parameters from request
+        use_multigroup = request.GET.get('multigroup', 'true').lower() == 'true'
+        min_fraction = float(request.GET.get('min_fraction', '0.001'))
+        use_cache = request.GET.get('use_cache', 'true').lower() == 'true'
+
+        # Initialize calculator
+        calculator = ActivationCalculator(use_multigroup=use_multigroup)
+
+        # Perform calculation
+        results = calculator.calculate_activation(
+            sample=sample,
+            irradiation_logs=logs,
+            flux_configs=flux_configs,
+            min_activity_fraction=min_fraction,
+            use_cache=use_cache
+        )
+
+        if not results.get('calculation_successful', False):
+            return JsonResponse({
+                'success': False,
+                'error': results.get('error_message', 'Calculation failed')
+            }, status=500)
+
+        # Save results to database (cache for future use)
+        if not results.get('from_cache', False):
+            _save_activation_result(sample, results, use_multigroup)
+
+        # Prepare response
+        response_data = {
+            'success': True,
+            'sample_id': sample.sample_id,
+            'total_activity_bq': results['total_activity_bq'],
+            'total_activity_ci': results['total_activity_bq'] / 3.7e10,
+            'reference_time': results['reference_time'],
+            'isotopes': results['isotopes'],
+            'estimated_dose_rate_1ft': results.get('estimated_dose_rate_1ft'),
+            'num_isotopes': len(results['isotopes']),
+            'from_cache': results.get('from_cache', False),
+            'irradiation_count': logs.count(),
+        }
+
+        return JsonResponse(response_data)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+def _save_activation_result(sample, results, use_multigroup):
+    """Helper function to save activation results to database"""
+    from .models import ActivationResult
+    from datetime import datetime
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        # Parse reference time
+        ref_time = datetime.fromisoformat(results['reference_time'])
+
+        # Create or update result
+        result, created = ActivationResult.objects.update_or_create(
+            sample=sample,
+            irradiation_hash=results['irradiation_hash'],
+            defaults={
+                'reference_time': ref_time,
+                'total_activity_bq': results['total_activity_bq'],
+                'estimated_dose_rate_1ft': results.get('estimated_dose_rate_1ft'),
+                'isotopic_inventory': results['isotopes'],
+                'calculation_method': 'multi-group' if use_multigroup else 'one-group',
+                'number_of_isotopes': len(results['isotopes']),
+                'calculation_successful': True,
+                'error_message': '',
+            }
+        )
+
+        if created:
+            logger.info(f"Saved new activation result for {sample.sample_id}")
+        else:
+            logger.info(f"Updated activation result for {sample.sample_id}")
+
+    except Exception as e:
+        logger.error(f"Failed to save activation result: {e}")

@@ -697,3 +697,290 @@ class SampleIrradiationLog(models.Model):
         within_power = self.actual_power <= self.irf.max_power
         within_time = self.total_time <= self.irf.max_time
         return within_power and within_time
+
+
+# ========================================
+# ACTIVATION ANALYSIS MODELS
+# ========================================
+
+class FluxConfiguration(models.Model):
+    """
+    Stores neutron flux values for each irradiation location at reference power
+    Used for activation analysis calculations
+    """
+
+    LOCATION_CHOICES = [
+        ('bare_rabbit', 'Bare Rabbit'),
+        ('cad_rabbit', 'Cad Rabbit'),
+        ('beam_port', 'Beam Port'),
+        ('thermal_column', 'Thermal Column'),
+        ('other', 'Other'),
+    ]
+
+    location = models.CharField(
+        max_length=50,
+        choices=LOCATION_CHOICES,
+        unique=True,
+        help_text="Irradiation location"
+    )
+
+    # Reference power for flux measurements
+    reference_power = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=200.0,
+        help_text="Reference power in kW (default: 200 kW)"
+    )
+
+    # Thermal neutron flux (E < 0.5 eV)
+    thermal_flux = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text="Thermal neutron flux at reference power (n/cm²/s)"
+    )
+
+    # Fast neutron flux (E > 0.1 MeV)
+    fast_flux = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text="Fast neutron flux at reference power (n/cm²/s)"
+    )
+
+    # Optional: intermediate flux for multi-group calculations
+    intermediate_flux = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Intermediate neutron flux (0.5 eV < E < 0.1 MeV) at reference power (n/cm²/s)"
+    )
+
+    # Cadmium ratio (for thermal/epithermal characterization)
+    cadmium_ratio = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Cadmium ratio for this location (optional)"
+    )
+
+    notes = models.TextField(
+        blank=True,
+        help_text="Additional notes about flux measurements"
+    )
+
+    updated_date = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['location']
+        verbose_name = 'Flux Configuration'
+        verbose_name_plural = 'Flux Configurations'
+
+    def __str__(self):
+        return f"{self.get_location_display()} - φ_th={self.thermal_flux:.2e} n/cm²/s"
+
+    def get_scaled_fluxes(self, power_kw):
+        """
+        Get flux values scaled to a different power level
+        Assumes linear scaling with power
+
+        Args:
+            power_kw: Power in kW
+
+        Returns:
+            dict with thermal_flux, fast_flux, intermediate_flux
+        """
+        scale_factor = float(power_kw) / float(self.reference_power)
+
+        return {
+            'thermal_flux': float(self.thermal_flux) * scale_factor,
+            'fast_flux': float(self.fast_flux) * scale_factor,
+            'intermediate_flux': float(self.intermediate_flux) * scale_factor if self.intermediate_flux else 0.0,
+            'scale_factor': scale_factor
+        }
+
+
+class SampleComposition(models.Model):
+    """
+    Stores elemental composition of a sample
+    Multiple elements can compose a single sample
+    """
+
+    COMPOSITION_TYPE_CHOICES = [
+        ('wt', 'Weight Percent (wt%)'),
+        ('at', 'Atomic Percent (at%)'),
+    ]
+
+    sample = models.ForeignKey(
+        Sample,
+        on_delete=models.CASCADE,
+        related_name='composition_elements',
+        help_text="Sample this composition belongs to"
+    )
+
+    element = models.CharField(
+        max_length=3,
+        help_text="Element symbol (e.g., Au, Al, Cu)"
+    )
+
+    # Natural isotopic abundance or specific isotope
+    isotope = models.CharField(
+        max_length=10,
+        blank=True,
+        help_text="Specific isotope (e.g., Au-197) or blank for natural abundance"
+    )
+
+    # Composition fraction
+    fraction = models.DecimalField(
+        max_digits=8,
+        decimal_places=4,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text="Percentage of this element in the sample"
+    )
+
+    composition_type = models.CharField(
+        max_length=2,
+        choices=COMPOSITION_TYPE_CHOICES,
+        default='wt',
+        help_text="Type of composition (weight % or atomic %)"
+    )
+
+    order = models.IntegerField(
+        default=0,
+        help_text="Display order"
+    )
+
+    class Meta:
+        ordering = ['sample', 'order']
+        verbose_name = 'Sample Composition'
+        verbose_name_plural = 'Sample Compositions'
+        unique_together = ['sample', 'element', 'isotope']
+
+    def __str__(self):
+        isotope_str = f"-{self.isotope}" if self.isotope else ""
+        return f"{self.element}{isotope_str}: {self.fraction}% ({self.composition_type})"
+
+
+class ActivationResult(models.Model):
+    """
+    Caches calculated activation analysis results for samples
+    Stores isotopic inventory after all irradiations
+    """
+
+    sample = models.ForeignKey(
+        Sample,
+        on_delete=models.CASCADE,
+        related_name='activation_results',
+        help_text="Sample these results belong to"
+    )
+
+    # Hash of irradiation history to detect changes
+    irradiation_hash = models.CharField(
+        max_length=64,
+        help_text="SHA256 hash of irradiation log IDs and parameters"
+    )
+
+    # Calculation timestamp
+    calculated_at = models.DateTimeField(
+        auto_now=True,
+        help_text="When this calculation was performed"
+    )
+
+    # Reference time for activities (usually time of last irradiation end)
+    reference_time = models.DateTimeField(
+        help_text="Reference time for reported activities"
+    )
+
+    # Total activity
+    total_activity_bq = models.DecimalField(
+        max_digits=20,
+        decimal_places=4,
+        help_text="Total activity in Becquerels at reference time"
+    )
+
+    # Dose rate estimate (using 6CE rule or detailed calculation)
+    estimated_dose_rate_1ft = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Estimated dose rate at 1 foot (mrem/hr)"
+    )
+
+    # JSON field to store complete isotopic inventory
+    # Format: {isotope: {activity_bq, atoms, mass_g, contribution_to_dose}}
+    isotopic_inventory = models.JSONField(
+        help_text="Complete isotopic inventory as JSON"
+    )
+
+    # Calculation parameters
+    calculation_method = models.CharField(
+        max_length=50,
+        default='multi-group',
+        help_text="Method used (one-group, multi-group, etc.)"
+    )
+
+    number_of_isotopes = models.IntegerField(
+        help_text="Number of isotopes in inventory"
+    )
+
+    # Success flag
+    calculation_successful = models.BooleanField(
+        default=True,
+        help_text="Whether calculation completed successfully"
+    )
+
+    error_message = models.TextField(
+        blank=True,
+        help_text="Error message if calculation failed"
+    )
+
+    notes = models.TextField(
+        blank=True,
+        help_text="Calculation notes and assumptions"
+    )
+
+    class Meta:
+        ordering = ['-calculated_at']
+        verbose_name = 'Activation Result'
+        verbose_name_plural = 'Activation Results'
+        # Keep only most recent result per sample
+        unique_together = ['sample', 'irradiation_hash']
+
+    def __str__(self):
+        return f"{self.sample.sample_id} - {self.calculated_at.strftime('%Y-%m-%d %H:%M')} ({self.number_of_isotopes} isotopes)"
+
+    def get_activity_ci(self):
+        """Convert total activity to Curies"""
+        return float(self.total_activity_bq) / 3.7e10
+
+    def get_dominant_isotopes(self, min_fraction=0.01):
+        """
+        Get isotopes contributing more than min_fraction to total activity
+
+        Args:
+            min_fraction: Minimum fraction of total activity (default 1%)
+
+        Returns:
+            List of isotopes sorted by activity
+        """
+        inventory = self.isotopic_inventory
+        total_activity = float(self.total_activity_bq)
+
+        dominant = []
+        for isotope, data in inventory.items():
+            activity = data.get('activity_bq', 0)
+            fraction = activity / total_activity if total_activity > 0 else 0
+
+            if fraction >= min_fraction:
+                dominant.append({
+                    'isotope': isotope,
+                    'activity_bq': activity,
+                    'activity_ci': activity / 3.7e10,
+                    'fraction': fraction,
+                    'half_life': data.get('half_life', 'unknown')
+                })
+
+        # Sort by activity descending
+        dominant.sort(key=lambda x: x['activity_bq'], reverse=True)
+        return dominant
