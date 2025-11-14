@@ -153,10 +153,9 @@ class IRFUpdateView(UpdateView):
             new_irf.change_type = 'amendment'
             new_irf.change_notes = change_notes
 
-            # Modify IRF number to include version suffix (e.g., "24-001" -> "24-001-v2")
-            # This ensures uniqueness while keeping the base number for reference
-            base_irf_number = old_irf.irf_number.split('-v')[0]  # Strip existing version suffix if any
-            new_irf.irf_number = f"{base_irf_number}-v{new_irf.version_number}"
+            # Keep the same IRF number (amendments share the original number)
+            # Different versions are distinguished by version_number field
+            new_irf.irf_number = old_irf.irf_number
 
             new_irf.save()
 
