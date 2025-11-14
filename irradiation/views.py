@@ -1,5 +1,5 @@
 from django.shortcuts import render, get_object_or_404
-from django.views.generic import ListView, DetailView, CreateView, UpdateView
+from django.views.generic import ListView, DetailView, CreateView, UpdateView, DeleteView
 from django.db.models import Q, Count
 from django.urls import reverse_lazy
 from django.http import JsonResponse
@@ -195,6 +195,49 @@ class SampleLogCreateView(CreateView):
         """Return to sample logs tab with the date's accordion expanded"""
         date_param = self.object.irradiation_date.strftime('%Y%m%d')
         return reverse_lazy('irradiation:irf_detail', kwargs={'pk': self.object.irf.pk}) + f'?tab=logs#collapse{date_param}'
+
+
+class SampleLogUpdateView(UpdateView):
+    """Update existing sample irradiation log"""
+    model = SampleIrradiationLog
+    template_name = 'irradiation/sample_log_form.html'
+    form_class = SampleLogForm
+
+    def get_form_kwargs(self):
+        """Pass irf_pk to form for location choices"""
+        kwargs = super().get_form_kwargs()
+        if self.object.irf:
+            kwargs['irf_pk'] = self.object.irf.pk
+        return kwargs
+
+    def get_context_data(self, **kwargs):
+        """Add IRF to context for cancel button"""
+        context = super().get_context_data(**kwargs)
+        if self.object.irf:
+            context['irf'] = self.object.irf
+        return context
+
+    def get_success_url(self):
+        """Return to sample logs tab with the date's accordion expanded"""
+        date_param = self.object.irradiation_date.strftime('%Y%m%d')
+        return reverse_lazy('irradiation:irf_detail', kwargs={'pk': self.object.irf.pk}) + f'?tab=logs#collapse{date_param}'
+
+
+class SampleLogDeleteView(DeleteView):
+    """Delete sample irradiation log"""
+    model = SampleIrradiationLog
+    template_name = 'irradiation/sample_log_confirm_delete.html'
+
+    def get_context_data(self, **kwargs):
+        """Add IRF to context"""
+        context = super().get_context_data(**kwargs)
+        if self.object.irf:
+            context['irf'] = self.object.irf
+        return context
+
+    def get_success_url(self):
+        """Return to sample logs tab"""
+        return reverse_lazy('irradiation:irf_detail', kwargs={'pk': self.object.irf.pk}) + '?tab=logs'
 
 
 def home(request):
