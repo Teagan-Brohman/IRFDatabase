@@ -421,9 +421,9 @@
                                                             <th>Power (kW)</th>
                                                             <th>Time In</th>
                                                             <th>Time Out</th>
-                                                            <th>Total Time (min)</th>
+                                                            <th>Total Time</th>
                                                             <th>Dose Rate @ 1 ft (mR/hR)</th>
-                                                            <th>Decay Time (min)</th>
+                                                            <th>Decay Time</th>
                                                             <th>Initials</th>
                                                         </tr>
                                                     </thead>
@@ -436,9 +436,9 @@
                                                                 <td>{{ log.actual_power }}</td>
                                                                 <td>{{ log.time_in|date:'H:i' }}</td>
                                                                 <td>{{ log.time_out|date:'H:i' }}</td>
-                                                                <td>{{ log.total_time }}</td>
+                                                                <td>{{ log.total_time }} {{ log.get_total_time_unit_display }}</td>
                                                                 <td>{{ log.measured_dose_rate }}</td>
-                                                                <td>{{ log.decay_time }}</td>
+                                                                <td>{{ log.decay_time }} {{ log.get_decay_time_unit_display }}</td>
                                                                 <td>{{ log.operator_initials }}</td>
                                                             </tr>
                                                             {% if log.notes %}
@@ -600,13 +600,29 @@
 
 {% block extra_js %}
 <script>
-    // Activate tab based on URL parameter
+    // Activate tab based on URL parameter and auto-expand accordion if hash present
     document.addEventListener('DOMContentLoaded', function() {
         const urlParams = new URLSearchParams(window.location.search);
         const activeTab = urlParams.get('tab');
         if (activeTab === 'logs') {
             const logsTab = new bootstrap.Tab(document.getElementById('logs-tab'));
             logsTab.show();
+
+            // After tab is shown, check for hash to auto-expand accordion
+            setTimeout(function() {
+                const hash = window.location.hash;
+                if (hash) {
+                    const accordionElement = document.querySelector(hash);
+                    if (accordionElement) {
+                        // Use Bootstrap's collapse API to show the accordion
+                        const bsCollapse = new bootstrap.Collapse(accordionElement, {
+                            show: true
+                        });
+                        // Scroll to the expanded accordion
+                        accordionElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                }
+            }, 100);
         }
     });
 </script>

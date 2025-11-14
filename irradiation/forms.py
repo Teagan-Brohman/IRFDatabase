@@ -164,8 +164,10 @@ class SampleLogForm(forms.ModelForm):
             'time_in',
             'time_out',
             'total_time',
+            'total_time_unit',
             'measured_dose_rate',
             'decay_time',
+            'decay_time_unit',
             'operator_initials',
             'notes',
         ]
@@ -176,3 +178,50 @@ class SampleLogForm(forms.ModelForm):
             'time_in': forms.TimeInput(attrs={'type': 'time'}),
             'time_out': forms.TimeInput(attrs={'type': 'time'}),
         }
+
+    def __init__(self, *args, **kwargs):
+        # Extract irf_pk if provided
+        irf_pk = kwargs.pop('irf_pk', None)
+        super().__init__(*args, **kwargs)
+
+        # If we have an IRF (either from instance or from irf_pk), populate location choices
+        irf = None
+        if self.instance.pk and self.instance.irf:
+            irf = self.instance.irf
+        elif irf_pk:
+            try:
+                irf = IrradiationRequestForm.objects.get(pk=irf_pk)
+            except IrradiationRequestForm.DoesNotExist:
+                pass
+
+        if irf and irf.irradiation_location:
+            # Parse the IRF's approved locations
+            location_choices = []
+            locations = [loc.strip() for loc in irf.irradiation_location.split(',')]
+
+            # Map location codes to display names
+            location_map = {
+                'bare_rabbit_tube': 'Bare Rabbit Tube',
+                'cadmium_rabbit_tube': 'Cadmium Rabbit Tube',
+                'beam_port': 'Beam Port',
+                'thermal_column': 'Thermal Column',
+                'other': 'Other',
+            }
+
+            for loc in locations:
+                if loc in location_map:
+                    location_choices.append((loc, location_map[loc]))
+                elif loc:  # For any other custom locations
+                    location_choices.append((loc, loc.replace('_', ' ').title()))
+
+            # Add custom location if specified
+            if irf.irradiation_location_other:
+                location_choices.append(('other_custom', f'Other: {irf.irradiation_location_other}'))
+
+            if location_choices:
+                self.fields['actual_location'] = forms.ChoiceField(
+                    choices=location_choices,
+                    required=True,
+                    label='Location',
+                    help_text='Select from IRF-approved locations'
+                )

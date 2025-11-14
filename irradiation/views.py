@@ -158,6 +158,14 @@ class SampleLogCreateView(CreateView):
     template_name = 'irradiation/sample_log_form.html'
     form_class = SampleLogForm
 
+    def get_form_kwargs(self):
+        """Pass irf_pk to form for location choices"""
+        kwargs = super().get_form_kwargs()
+        irf_id = self.request.GET.get('irf')
+        if irf_id:
+            kwargs['irf_pk'] = irf_id
+        return kwargs
+
     def get_initial(self):
         """Pre-fill IRF and date if provided in URL"""
         initial = super().get_initial()
@@ -172,8 +180,21 @@ class SampleLogCreateView(CreateView):
 
         return initial
 
+    def get_context_data(self, **kwargs):
+        """Add IRF to context for cancel button"""
+        context = super().get_context_data(**kwargs)
+        irf_id = self.request.GET.get('irf')
+        if irf_id:
+            try:
+                context['irf'] = IrradiationRequestForm.objects.get(pk=irf_id)
+            except IrradiationRequestForm.DoesNotExist:
+                pass
+        return context
+
     def get_success_url(self):
-        return reverse_lazy('irradiation:irf_detail', kwargs={'pk': self.object.irf.pk}) + '?tab=logs'
+        """Return to sample logs tab with the date's accordion expanded"""
+        date_param = self.object.irradiation_date.strftime('%Y%m%d')
+        return reverse_lazy('irradiation:irf_detail', kwargs={'pk': self.object.irf.pk}) + f'?tab=logs#collapse{date_param}'
 
 
 def home(request):
