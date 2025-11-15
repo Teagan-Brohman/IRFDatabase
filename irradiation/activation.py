@@ -289,7 +289,8 @@ class ActivationCalculator:
 
                 # Convert wt% to at% if needed (simplified - assumes single isotope)
                 if comp.isotope:
-                    isotope = comp.isotope
+                    # Format as "Element-Mass" (e.g., "Au-197")
+                    isotope = f"{element}-{comp.isotope}"
                 else:
                     # Use most abundant isotope
                     isotope = self._get_natural_isotope(element)
@@ -340,8 +341,23 @@ class ActivationCalculator:
         """
         inventory = {}
 
-        # Get sample mass (or use estimate)
-        mass_g = float(sample.mass) if sample.mass else 1.0  # Default 1 gram
+        # Get sample mass and convert to grams
+        if sample.mass:
+            mass_value = float(sample.mass)
+            mass_unit = sample.mass_unit if sample.mass_unit else 'g'
+
+            # Convert to grams
+            if mass_unit == 'mg':
+                mass_g = mass_value / 1000.0
+            elif mass_unit == 'kg':
+                mass_g = mass_value * 1000.0
+            elif mass_unit == 'g':
+                mass_g = mass_value
+            else:
+                logger.warning(f"Unknown mass unit: {mass_unit}, assuming grams")
+                mass_g = mass_value
+        else:
+            mass_g = 1.0  # Default 1 gram
 
         # For each element and isotope, calculate number of atoms
         for element, isotopes in composition.items():
@@ -473,8 +489,12 @@ class ActivationCalculator:
             else:
                 new_inventory[product_isotope] = n_produced
 
-            # Deplete target (very small depletion typically)
-            new_inventory[target_isotope] = max(0, n_atoms - n_produced * sigma_cm2 * flux * time_s)
+            # Deplete target by number of atoms consumed
+            # For radioactive products: consumption = production + decay
+            # For stable products: consumption = production
+            # Simplified: assume consumption ≈ production (small depletion typically < 1%)
+            n_consumed = n_produced if half_life_s == 'stable' else n_produced  # Could refine this
+            new_inventory[target_isotope] = max(0, n_atoms - n_consumed)
 
         return new_inventory
 
@@ -559,14 +579,11 @@ class ActivationCalculator:
             if n_atoms <= 0:
                 continue
 
-            xs_data = self._get_cross_section_data(isotope)
-            if not xs_data:
-                continue
+            # Get half-life for this isotope (not cross-section - it might be a product!)
+            half_life_s = self._get_half_life(isotope)
 
-            _, _, half_life_s = xs_data
-
-            if half_life_s == 'stable' or half_life_s == 0:
-                continue  # Skip stable isotopes
+            if half_life_s is None or half_life_s == 'stable' or half_life_s == 0:
+                continue  # Skip stable isotopes or unknown isotopes
 
             # Activity = λ * N
             decay_const = LAMBDA_LN2 / half_life_s
@@ -591,6 +608,48 @@ class ActivationCalculator:
                 filtered[isotope] = data
 
         return {'isotopes': filtered}
+
+    def _get_half_life(self, isotope):
+        """
+        Get half-life for an isotope from PyNE or fallback database
+
+        Args:
+            isotope: Isotope name (e.g., "Au-198")
+
+        Returns:
+            float: Half-life in seconds, or 'stable', or None if unknown
+        """
+        # Try PyNE first
+        if HAS_PYNE:
+            try:
+                product_nucid = nucname.id(isotope)
+                half_life_s = pyne_data.half_life(product_nucid)
+
+                # PyNE returns inf for stable isotopes
+                if half_life_s is None or half_life_s <= 0:
+                    return 'stable'
+                elif HAS_NUMPY and not np.isfinite(half_life_s):
+                    return 'stable'
+
+                return half_life_s
+            except Exception as e:
+                logger.debug(f"PyNE half-life lookup failed for {isotope}: {e}")
+
+        # Fallback to simplified database
+        try:
+            element = isotope.split('-')[0]
+        except (IndexError, AttributeError):
+            return None
+
+        if element in SIMPLE_CROSS_SECTIONS:
+            # Check if this isotope is a product in our database
+            for target_isotope, data in SIMPLE_CROSS_SECTIONS[element].items():
+                product = data[2]  # product_isotope
+                if product == isotope:
+                    return data[3]  # half_life_s
+
+        logger.debug(f"No half-life data found for {isotope}")
+        return None
 
     def _format_half_life(self, half_life_s):
         """Format half-life for display"""
@@ -651,7 +710,7 @@ class ActivationCalculator:
 
     def _get_pyne_cross_section(self, isotope, thermal_flux=None, fast_flux=None, intermediate_flux=None):
         """
-        Get neutron capture cross-section data from PyNE
+        Get neutron capture cross-section data from PyNE EAF database
 
         If flux values are provided, calculates spectrum-averaged cross-section.
         Otherwise returns thermal cross-section only.
@@ -666,53 +725,111 @@ class ActivationCalculator:
             tuple: (sigma_barns, product_isotope, half_life_s) or None
         """
         try:
+            import tables
+
             # Convert isotope name to PyNE nucid format
             # Example: "Au-197" -> 791970000 (ZZAAAM format)
             nucid = nucname.id(isotope)
 
-            # Get thermal neutron capture cross-section (n,gamma) at 0.0253 eV
-            # pyne_data.gamma_x returns cross-section in barns
-            sigma_thermal = pyne_data.gamma_x(nucid)
+            # Open PyNE nuclear data database
+            from pyne import nuc_data as nuc_data_module
+            nuc_data_path = str(nuc_data_module)  # Path to nuc_data.h5
 
-            if sigma_thermal is None or sigma_thermal <= 0:
-                logger.debug(f"No thermal cross-section data for {isotope} in PyNE")
-                return None
+            with tables.open_file(nuc_data_path, 'r') as f:
+                # Get (n,gamma) cross-section from EAF database
+                # Reaction b'1020' is MT 102 (n,gamma) capture
+                xs_table = f.root.neutron.eaf_xs.eaf_xs
+                E_g = np.array(f.root.neutron.eaf_xs.E_g[:])  # Energy group boundaries as numpy array
 
-            # Calculate spectrum-averaged cross-section if flux spectrum provided
-            if thermal_flux and fast_flux:
-                # For most materials, thermal cross-section dominates
-                # Fast cross-section is typically much smaller (1/v behavior breaks down)
-                # Simplified multi-group: assume fast xs is ~1/100 of thermal
-                sigma_fast = sigma_thermal * 0.01  # Rough approximation
+                # Find the cross-section data for this isotope
+                xs_data = None
+                product_isotope_str = None
+                for row in xs_table:
+                    if row['nuc_zz'] == nucid and row['rxnum'] == b'1020':
+                        xs_data = np.array(row['xs'])  # 175-group cross-section array as numpy array
+                        product_isotope_str = row['daughter'].decode('utf-8')
+                        break
 
-                # If intermediate flux provided, estimate intermediate xs
-                if intermediate_flux:
-                    # Intermediate xs typically between thermal and fast
-                    sigma_intermediate = sigma_thermal * 0.1  # Rough approximation
-                    total_flux = thermal_flux + intermediate_flux + fast_flux
-                    sigma_avg = (sigma_thermal * thermal_flux +
-                               sigma_intermediate * intermediate_flux +
-                               sigma_fast * fast_flux) / total_flux
+                if xs_data is None:
+                    logger.debug(f"No (n,gamma) cross-section data for {isotope} in PyNE EAF database")
+                    return None
+
+                # Energy groups go from high to low energy
+                # EAF-175 library covers 0-19.64 eV (thermal/epithermal only)
+                # Thermal energy (~0.025 eV) is in the last groups
+                # Epithermal/resonance (0.5-19.64 eV) is in the first groups
+
+                # Define energy boundaries (in eV)
+                # NOTE: EAF library only goes up to ~20 eV, so "fast" here means epithermal
+                E_thermal = 0.5  # Below 0.5 eV is thermal
+                E_max = E_g.max()  # Maximum energy in database (~19.64 eV)
+
+                # Calculate flux-weighted average if flux spectrum provided
+                if thermal_flux and fast_flux and HAS_NUMPY:
+                    # Find energy group indices
+                    thermal_mask = E_g < E_thermal
+                    epithermal_mask = E_g >= E_thermal  # Everything above thermal in this DB
+
+                    # Get average cross-sections for each energy range
+                    sigma_thermal = np.mean(xs_data[thermal_mask]) if np.any(thermal_mask) else xs_data[-1]
+                    sigma_epithermal = np.mean(xs_data[epithermal_mask]) if np.any(epithermal_mask) else xs_data[0]
+
+                    # EAF database doesn't have true fast neutron data (>100 keV)
+                    # For fast neutrons, use approximation: sigma_fast ≈ sigma_thermal / 100
+                    # This accounts for 1/v behavior breakdown at high energies
+                    sigma_fast_approx = sigma_thermal * 0.01
+
+                    # Calculate weighted average across all three flux components
+                    # - thermal_flux: weight with sigma_thermal
+                    # - intermediate_flux (if provided): weight with sigma_epithermal
+                    # - fast_flux: weight with sigma_fast_approx (approximation)
+                    if intermediate_flux:
+                        total_flux = thermal_flux + intermediate_flux + fast_flux
+                        sigma_avg = (sigma_thermal * thermal_flux +
+                                   sigma_epithermal * intermediate_flux +
+                                   sigma_fast_approx * fast_flux) / total_flux
+                        logger.debug(f"{isotope}: σ_th={sigma_thermal:.2f}b, σ_epi={sigma_epithermal:.4f}b, "
+                                   f"σ_fast(approx)={sigma_fast_approx:.6f}b, σ_avg={sigma_avg:.2f}b")
+                    else:
+                        # No intermediate flux - assume thermal + fast only
+                        total_flux = thermal_flux + fast_flux
+                        sigma_avg = (sigma_thermal * thermal_flux +
+                                   sigma_fast_approx * fast_flux) / total_flux
+                        logger.debug(f"{isotope}: σ_th={sigma_thermal:.2f}b, "
+                                   f"σ_fast(approx)={sigma_fast_approx:.6f}b, σ_avg={sigma_avg:.2f}b")
+
+                    sigma_barns = sigma_avg
                 else:
-                    total_flux = thermal_flux + fast_flux
-                    sigma_avg = (sigma_thermal * thermal_flux +
-                               sigma_fast * fast_flux) / total_flux
+                    # Use thermal cross-section only (last energy group)
+                    sigma_barns = xs_data[-1]  # Last group is lowest energy (thermal)
+                    logger.debug(f"{isotope}: thermal σ={sigma_barns:.2f}b")
 
-                sigma_barns = sigma_avg
-                logger.debug(f"{isotope}: thermal={sigma_thermal:.2f}b, "
-                           f"spectrum-averaged={sigma_avg:.2f}b")
-            else:
-                # Use thermal cross-section only
-                sigma_barns = sigma_thermal
-
-            # Determine product isotope (A+1)
-            element_z = nucname.znum(nucid)
-            mass_a = nucname.anum(nucid)
-            product_nucid = nucname.id_from_ZZZAAA(element_z * 1000 + (mass_a + 1))
-            product_isotope = nucname.name(product_nucid)
+            # Determine product isotope from daughter string
+            # PyNE format: "AU198G" -> "Au-198"
+            try:
+                # Parse element and mass from daughter string (e.g., "AU198G")
+                import re
+                match = re.match(r'([A-Z][a-z]?)(\d+)', product_isotope_str)
+                if match:
+                    element_sym = match.group(1).capitalize()
+                    mass_num = match.group(2)
+                    product_isotope = f"{element_sym}-{mass_num}"
+                else:
+                    # Fallback: calculate A+1
+                    element_z = nucname.znum(nucid)
+                    mass_a = nucname.anum(nucid)
+                    product_nucid = nucname.id_from_ZZZAAA(element_z * 1000 + (mass_a + 1))
+                    product_isotope = nucname.name(product_nucid)
+            except:
+                # Fallback calculation
+                element_z = nucname.znum(nucid)
+                mass_a = nucname.anum(nucid)
+                product_nucid = nucname.id_from_ZZZAAA(element_z * 1000 + (mass_a + 1))
+                product_isotope = nucname.name(product_nucid)
 
             # Get half-life of product isotope
             try:
+                product_nucid = nucname.id(product_isotope)
                 half_life_s = pyne_data.half_life(product_nucid)
                 # PyNE returns half-life in seconds
                 # If stable or very long-lived, might return very large number or inf
@@ -738,6 +855,8 @@ class ActivationCalculator:
 
         except Exception as e:
             logger.debug(f"PyNE cross-section lookup failed for {isotope}: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
             return None
 
     def _estimate_dose_rate(self, isotopes):
