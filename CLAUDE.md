@@ -6,6 +6,46 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 IRF Database is a Django-based web application for managing Irradiation Request Forms (IRFs) and Sample Irradiation Logs for the Missouri S&T Nuclear Reactor. The system implements Missouri S&T SOP 702 (Standard Operating Procedure 702) for tracking nuclear reactor sample irradiations spanning 30+ years of historical data.
 
+## Python Version Compatibility
+
+**IMPORTANT:** This project requires **Python 3.8-3.9** for PyNE compatibility.
+
+- **Python Version:** 3.8.x - 3.9.x (required for PyNE)
+- **Django Version:** 3.2 LTS (supports Python 3.6-3.10)
+- **PyNE Version:** 0.7.5 (last updated 2021, works best with Python 3.8-3.9)
+
+### Why Python 3.8-3.9?
+
+PyNE (Python for Nuclear Engineering) is a critical dependency for neutron activation analysis calculations. PyNE was last updated in 2021 (v0.7.5) and works most reliably with Python 3.8-3.9. While PyNE may work with newer Python versions, compatibility is not guaranteed.
+
+**Key Compatibility Notes:**
+- Django 5.0+ requires Python 3.10+, so we use Django 3.2 LTS for Python 3.8-3.9 support
+- Scientific packages (NumPy, SciPy) are pinned to versions compatible with Python 3.8-3.9
+- Use conda for installing PyNE: `conda install -c conda-forge pyne`
+
+### Setting Up the Environment
+
+**Using Conda (Recommended):**
+```bash
+# Create environment from environment.yml (includes Python 3.8-3.9)
+conda env create -f environment.yml
+
+# Activate environment
+conda activate irfdatabase
+```
+
+**Using pip with existing Python 3.8-3.9:**
+```bash
+# Ensure you're using Python 3.8 or 3.9
+python --version
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Install PyNE via conda (recommended even in pip environments)
+conda install -c conda-forge pyne
+```
+
 ## Development Commands
 
 ### Running the Development Server
@@ -212,19 +252,22 @@ Format: `YY-NNN` (e.g., `95-1`, `24-001`)
 
 ## Technology Stack
 
-- **Framework**: Django 5.0
+- **Framework**: Django 3.2 LTS (for Python 3.8-3.9 compatibility)
+- **Python**: 3.8.x - 3.9.x (required for PyNE)
 - **Database**: SQLite (db.sqlite3)
 - **Frontend**: Bootstrap 5 with custom JavaScript
 - **Visualization**: Plotly.js for interactive decay curves
 - **File Uploads**: Pillow for image handling
 - **Admin Tools**: django-import-export for bulk operations
 - **Scientific Computing**:
-  - `numpy` (≥1.24.0): Numerical calculations
-  - `scipy` (≥1.10.0): Advanced numerical methods
+  - `numpy` (≥1.20.0, <1.27.0): Numerical calculations (Python 3.8+ compatible)
+  - `scipy` (≥1.5.0, <1.12.0): Advanced numerical methods (Python 3.8+ compatible)
   - `radioactivedecay` (≥0.4.0): Decay chain calculations
-  - `PyNE` (optional): Multi-group neutron cross-sections
+  - `PyNE` (v0.7.5): Multi-group neutron cross-sections and nuclear data
+    - **Required for neutron activation analysis**
     - Best installed via conda: `conda install -c conda-forge pyne`
     - pip installation requires Fortran compilers
+    - Works best with Python 3.8-3.9
 
 ## Special Considerations
 
