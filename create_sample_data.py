@@ -8,11 +8,17 @@ import django
 from datetime import date, time
 
 # Setup Django
-sys.path.insert(0, '/home/user/IRFDatabase')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'irfdb.settings')
 django.setup()
 
-from irradiation.models import IrradiationRequestForm, SampleIrradiationLog
+from irradiation.models import IrradiationRequestForm, SampleIrradiationLog, Sample
+
+# Clear existing sample data
+print("Clearing existing sample data...")
+SampleIrradiationLog.objects.all().delete()
+Sample.objects.all().delete()
+IrradiationRequestForm.objects.all().delete()
 
 print("Creating sample IRFs and logs...")
 
@@ -47,11 +53,30 @@ irf1 = IrradiationRequestForm.objects.create(
 )
 print(f"Created IRF {irf1.irf_number}")
 
+# Create samples for IRF 1
+sample1 = Sample.objects.create(
+    sample_id='AU-001',
+    name='Gold foil sample 1',
+    material_type='Gold',
+    physical_form='foil',
+    mass=2.5,
+    mass_unit='g',
+)
+
+sample2 = Sample.objects.create(
+    sample_id='AU-002',
+    name='Gold foil sample 2',
+    material_type='Gold',
+    physical_form='foil',
+    mass=2.5,
+    mass_unit='g',
+)
+
 # Add sample logs for IRF 1
 log1 = SampleIrradiationLog.objects.create(
     irf=irf1,
+    sample=sample1,
     irradiation_date=date(2024, 2, 1),
-    sample_id='AU-001',
     experimenter_name='Dr. John Smith',
     actual_location='Bare Rabbit',
     actual_power=200.00,
@@ -62,12 +87,12 @@ log1 = SampleIrradiationLog.objects.create(
     decay_time=5.00,
     operator_initials='JD',
 )
-print(f"  - Created log: {log1.sample_id}")
+print(f"  - Created log: {sample1.sample_id}")
 
 log2 = SampleIrradiationLog.objects.create(
     irf=irf1,
+    sample=sample2,
     irradiation_date=date(2024, 2, 8),
-    sample_id='AU-002',
     experimenter_name='Dr. John Smith',
     actual_location='Bare Rabbit',
     actual_power=200.00,
@@ -78,7 +103,7 @@ log2 = SampleIrradiationLog.objects.create(
     decay_time=5.00,
     operator_initials='JD',
 )
-print(f"  - Created log: {log2.sample_id}")
+print(f"  - Created log: {sample2.sample_id}")
 
 # IRF 2: Soil Samples
 irf2 = IrradiationRequestForm.objects.create(
@@ -111,11 +136,21 @@ irf2 = IrradiationRequestForm.objects.create(
 )
 print(f"Created IRF {irf2.irf_number}")
 
+# Create sample for IRF 2
+sample3 = Sample.objects.create(
+    sample_id='SOIL-A1',
+    name='Soil sample A1',
+    material_type='Soil',
+    physical_form='powder',
+    mass=8.0,
+    mass_unit='g',
+)
+
 # Add sample log for IRF 2
 log3 = SampleIrradiationLog.objects.create(
     irf=irf2,
+    sample=sample3,
     irradiation_date=date(2024, 3, 15),
-    sample_id='SOIL-A1',
     experimenter_name='Dr. Sarah Williams',
     actual_location='Cad Rabbit',
     actual_power=150.00,
@@ -126,7 +161,7 @@ log3 = SampleIrradiationLog.objects.create(
     decay_time=10.00,
     operator_initials='MC',
 )
-print(f"  - Created log: {log3.sample_id}")
+print(f"  - Created log: {sample3.sample_id}")
 
 # IRF 3: Medical Isotope Production
 irf3 = IrradiationRequestForm.objects.create(
@@ -165,10 +200,20 @@ irf3 = IrradiationRequestForm.objects.create(
 )
 print(f"Created IRF {irf3.irf_number}")
 
+# Create sample for IRF 3
+sample4 = Sample.objects.create(
+    sample_id='MO-99-001',
+    name='Molybdenum-99 target 1',
+    material_type='Molybdenum',
+    physical_form='pellet',
+    mass=12.0,
+    mass_unit='g',
+)
+
 log4 = SampleIrradiationLog.objects.create(
     irf=irf3,
+    sample=sample4,
     irradiation_date=date(2024, 4, 20),
-    sample_id='MO-99-001',
     experimenter_name='Dr. Emily Thompson',
     actual_location='Beam Port 1',
     actual_power=250.00,
@@ -180,7 +225,7 @@ log4 = SampleIrradiationLog.objects.create(
     operator_initials='WB',
     notes='Sample handled with remote tools. Stored in lead pig as per restrictions.',
 )
-print(f"  - Created log: {log4.sample_id}")
+print(f"  - Created log: {sample4.sample_id}")
 
 # IRF 4: Pending approval
 irf4 = IrradiationRequestForm.objects.create(
@@ -227,6 +272,7 @@ print(f"Created IRF {irf5.irf_number}")
 
 print("\n✓ Sample data creation complete!")
 print(f"Created {IrradiationRequestForm.objects.count()} IRFs")
+print(f"Created {Sample.objects.count()} samples")
 print(f"Created {SampleIrradiationLog.objects.count()} sample logs")
 print("\nLogin credentials:")
 print("  Username: admin")
