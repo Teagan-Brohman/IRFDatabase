@@ -3,6 +3,16 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 from django.urls import reverse
 
 
+# Shared location choices for consistency across all models
+LOCATION_CHOICES = [
+    ('bare_rabbit', 'Bare Rabbit'),
+    ('cad_rabbit', 'Cad Rabbit'),
+    ('beam_port', 'Beam Port'),
+    ('thermal_column', 'Thermal Column'),
+    ('other', 'Other'),
+]
+
+
 class IrradiationRequestForm(models.Model):
     """
     Main IRF model based on Missouri S&T SOP 702
@@ -92,16 +102,10 @@ class IrradiationRequestForm(models.Model):
     )
 
     # d. Irradiation Location
-    LOCATION_CHOICES = [
-        ('bare_rabbit', 'Bare Rabbit'),
-        ('cad_rabbit', 'Cad Rabbit'),
-        ('beam_port', 'Beam Port'),
-        ('thermal_column', 'Thermal Column'),
-        ('other', 'Other'),
-    ]
     # Allow multiple locations (stored as comma-separated or use ManyToMany in future)
     irradiation_location = models.CharField(
         max_length=200,
+        choices=LOCATION_CHOICES,
         help_text="Select irradiation facility. Multiple may be authorized on single IRF"
     )
     irradiation_location_other = models.CharField(
@@ -615,6 +619,7 @@ class SampleIrradiationLog(models.Model):
     # 4. Location
     actual_location = models.CharField(
         max_length=200,
+        choices=LOCATION_CHOICES,
         help_text="Actual irradiation location used"
     )
 
@@ -725,14 +730,6 @@ class FluxConfiguration(models.Model):
     Stores neutron flux values for each irradiation location at reference power
     Used for activation analysis calculations
     """
-
-    LOCATION_CHOICES = [
-        ('bare_rabbit', 'Bare Rabbit'),
-        ('cad_rabbit', 'Cad Rabbit'),
-        ('beam_port', 'Beam Port'),
-        ('thermal_column', 'Thermal Column'),
-        ('other', 'Other'),
-    ]
 
     location = models.CharField(
         max_length=50,

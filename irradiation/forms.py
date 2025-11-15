@@ -1,6 +1,12 @@
 from django import forms
 from django.forms import CheckboxSelectMultiple, inlineformset_factory
-from .models import IrradiationRequestForm, SampleIrradiationLog, Sample, SampleComposition
+from .models import (
+    IrradiationRequestForm,
+    SampleIrradiationLog,
+    Sample,
+    SampleComposition,
+    LOCATION_CHOICES
+)
 
 
 class IRFForm(forms.ModelForm):
@@ -8,12 +14,7 @@ class IRFForm(forms.ModelForm):
 
     # Multiple selection for irradiation locations
     irradiation_locations = forms.MultipleChoiceField(
-        choices=[
-            ('bare_rabbit', 'Bare Rabbit'),
-            ('cad_rabbit', 'Cad Rabbit'),
-            ('beam_port', 'Beam Port'),
-            ('thermal_column', 'Thermal Column'),
-        ],
+        choices=LOCATION_CHOICES,
         widget=forms.CheckboxSelectMultiple,
         required=False,
         label='Irradiation Location(s)',
@@ -200,14 +201,8 @@ class SampleLogForm(forms.ModelForm):
             location_choices = []
             locations = [loc.strip() for loc in irf.irradiation_location.split(',')]
 
-            # Map location codes to display names
-            location_map = {
-                'bare_rabbit': 'Bare Rabbit',
-                'cad_rabbit': 'Cad Rabbit',
-                'beam_port': 'Beam Port',
-                'thermal_column': 'Thermal Column',
-                'other': 'Other',
-            }
+            # Map location codes to display names using LOCATION_CHOICES
+            location_map = dict(LOCATION_CHOICES)
 
             for loc in locations:
                 if loc in location_map:
