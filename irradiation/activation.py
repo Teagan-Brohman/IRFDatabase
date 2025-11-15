@@ -156,8 +156,18 @@ class ActivationCalculator:
 
             for log in irradiation_logs:
                 # Get flux configuration for this location
-                # Note: Location values must match exactly (e.g., 'bare_rabbit', 'cad_rabbit')
+                # Try exact match first, then try case-insensitive match
                 flux_config = flux_configs.get(log.actual_location)
+
+                # If exact match fails, try case-insensitive matching
+                if not flux_config:
+                    location_lower = log.actual_location.lower()
+                    for config_location, config in flux_configs.items():
+                        if config_location.lower() == location_lower:
+                            flux_config = config
+                            logger.info(f"Matched '{log.actual_location}' to '{config_location}' (case-insensitive)")
+                            break
+
                 if not flux_config:
                     available_locations = list(flux_configs.keys())
                     logger.warning(
