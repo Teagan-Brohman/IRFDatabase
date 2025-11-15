@@ -28,6 +28,8 @@ dependencies:
 
   # PyNE - Nuclear data and cross-sections (conda-forge recommended)
   # PyNE v0.7.5 works best with Python 3.8-3.9
+  # MOAB 5.3.0 required for PyNE (provides libMOAB.so.5)
+  - moab=5.3.0
   - pyne
 
   # Development tools (optional)
