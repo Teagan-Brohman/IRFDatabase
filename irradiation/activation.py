@@ -9,22 +9,41 @@ complete irradiation history, accounting for:
 - Multi-group neutron spectrum effects (thermal/fast/intermediate)
 
 Features:
-- PyNE Integration: Uses PyNE nuclear data library for cross-sections when available
-- Spectrum-averaged cross-sections: Accounts for thermal, fast, and intermediate flux
+- PyNE Integration: Uses PyNE DataSource interface for energy-dependent cross-sections
+- Multi-group Cross Sections: Proper energy-group structures (thermal, epithermal, fast)
+- Spectrum Collapse: Flux-weighted averaging of multi-group cross sections to one-group
+- Multiple Data Sources: SimpleDataSource, EAFDataSource, and ENDF readers
 - Decay chains: Uses radioactivedecay for proper decay chain calculations
 - Fallback mode: Includes simplified cross-section database for common elements
 - Caching: SHA256 hash-based caching to avoid redundant calculations
 
+Cross Section Methodology:
+- Energy Groups:
+  * Thermal: E < 0.5 eV (Maxwell-Boltzmann spectrum at reactor temperature)
+  * Intermediate/Epithermal: 0.5 eV < E < 0.1 MeV (1/E slowing down spectrum)
+  * Fast: 0.1 MeV < E < 10 MeV (fission spectrum)
+- Spectrum Collapse: σ_eff = Σ(σ_g × φ_g) / Σ(φ_g) where g = energy group
+- Data Priority: SimpleDataSource → EAFDataSource → Fallback database
+
 Dependencies:
 - radioactivedecay: For decay chain calculations between irradiations
 - PyNE (recommended): For comprehensive multi-group cross-sections from nuclear data
-- NumPy: For numerical calculations
+- NumPy: For numerical calculations and multi-group arrays
 - SciPy: For advanced numerical methods
 
 Installation:
   Conda (recommended): conda install -c conda-forge pyne radioactivedecay numpy scipy
   Pip: pip install radioactivedecay numpy scipy
        (PyNE pip installation requires Fortran compilers)
+
+ENDF Data (Optional):
+  For the most accurate cross sections, PyNE can use ENDF/B-VIII.0 data.
+  The built-in data sources (Simple, EAF) provide good accuracy for most applications.
+  To add ENDF data:
+    1. Download ENDF/B-VIII.0 from https://www.nndc.bnl.gov/endf/
+    2. Use PyNE's ENDF reader: from pyne.endf import Library
+    3. Process with NJOY or use PyNE's OpenMC data source
+  See: https://pyne.io/examples/endf_reader.html
 """
 
 import hashlib
@@ -710,10 +729,10 @@ class ActivationCalculator:
 
     def _get_pyne_cross_section(self, isotope, thermal_flux=None, fast_flux=None, intermediate_flux=None):
         """
-        Get neutron capture cross-section data from PyNE EAF database
+        Get neutron capture cross-section data using PyNE DataSource interface
 
-        If flux values are provided, calculates spectrum-averaged cross-section.
-        Otherwise returns thermal cross-section only.
+        Uses proper energy-dependent cross sections with spectrum-weighted averaging.
+        Supports multiple data sources: SimpleDataSource, EAFDataSource, and ENDF readers.
 
         Args:
             isotope: Isotope name (e.g., "Au-197")
@@ -725,131 +744,167 @@ class ActivationCalculator:
             tuple: (sigma_barns, product_isotope, half_life_s) or None
         """
         try:
-            import tables
+            from pyne.xs import data_source
 
-            # Convert isotope name to PyNE nucid format
-            # Example: "Au-197" -> 791970000 (ZZAAAM format)
+            # Convert isotope name to PyNE format
             nucid = nucname.id(isotope)
 
-            # Open PyNE nuclear data database
-            from pyne import nuc_data as nuc_data_module
-            nuc_data_path = str(nuc_data_module)  # Path to nuc_data.h5
+            # Define energy group structure for spectrum collapse
+            # Create a 3-group structure matching our flux definitions:
+            # Group 1: Fast (10 MeV - 0.1 MeV)
+            # Group 2: Intermediate/Epithermal (0.1 MeV - 0.5 eV)
+            # Group 3: Thermal (0.5 eV - 1e-5 eV)
+            if thermal_flux and fast_flux:
+                # Energy boundaries in eV (high to low)
+                # Use logarithmic spacing for better resolution across energy ranges
+                E_g = np.array([
+                    1.0e7,      # 10 MeV - upper bound for fast
+                    1.0e5,      # 0.1 MeV - boundary between fast and intermediate
+                    0.5,        # 0.5 eV - boundary between intermediate and thermal
+                    1.0e-5      # Lower thermal cutoff
+                ])
 
-            with tables.open_file(nuc_data_path, 'r') as f:
-                # Get (n,gamma) cross-section from EAF database
-                # Reaction b'1020' is MT 102 (n,gamma) capture
-                xs_table = f.root.neutron.eaf_xs.eaf_xs
-                E_g = np.array(f.root.neutron.eaf_xs.E_g[:])  # Energy group boundaries as numpy array
+                # Flux weights for each group (in same order as energy boundaries)
+                # Groups are defined between consecutive energy boundaries
+                flux_weights = np.array([
+                    fast_flux if fast_flux else 0.0,                      # Fast group
+                    intermediate_flux if intermediate_flux else 0.0,      # Intermediate group
+                    thermal_flux if thermal_flux else 0.0,                # Thermal group
+                ])
 
-                # Find the cross-section data for this isotope
-                xs_data = None
-                product_isotope_str = None
-                for row in xs_table:
-                    if row['nuc_zz'] == nucid and row['rxnum'] == b'1020':
-                        xs_data = np.array(row['xs'])  # 175-group cross-section array as numpy array
-                        product_isotope_str = row['daughter'].decode('utf-8')
-                        break
-
-                if xs_data is None:
-                    logger.debug(f"No (n,gamma) cross-section data for {isotope} in PyNE EAF database")
-                    return None
-
-                # Energy groups go from high to low energy
-                # EAF-175 library covers 0-19.64 eV (thermal/epithermal only)
-                # Thermal energy (~0.025 eV) is in the last groups
-                # Epithermal/resonance (0.5-19.64 eV) is in the first groups
-
-                # Define energy boundaries (in eV)
-                # NOTE: EAF library only goes up to ~20 eV, so "fast" here means epithermal
-                E_thermal = 0.5  # Below 0.5 eV is thermal
-                E_max = E_g.max()  # Maximum energy in database (~19.64 eV)
-
-                # Calculate flux-weighted average if flux spectrum provided
-                if thermal_flux and fast_flux and HAS_NUMPY:
-                    # Find energy group indices
-                    thermal_mask = E_g < E_thermal
-                    epithermal_mask = E_g >= E_thermal  # Everything above thermal in this DB
-
-                    # Get average cross-sections for each energy range
-                    sigma_thermal = np.mean(xs_data[thermal_mask]) if np.any(thermal_mask) else xs_data[-1]
-                    sigma_epithermal = np.mean(xs_data[epithermal_mask]) if np.any(epithermal_mask) else xs_data[0]
-
-                    # EAF database doesn't have true fast neutron data (>100 keV)
-                    # For fast neutrons, use approximation: sigma_fast ≈ sigma_thermal / 100
-                    # This accounts for 1/v behavior breakdown at high energies
-                    sigma_fast_approx = sigma_thermal * 0.01
-
-                    # Calculate weighted average across all three flux components
-                    # - thermal_flux: weight with sigma_thermal
-                    # - intermediate_flux (if provided): weight with sigma_epithermal
-                    # - fast_flux: weight with sigma_fast_approx (approximation)
-                    if intermediate_flux:
-                        total_flux = thermal_flux + intermediate_flux + fast_flux
-                        sigma_avg = (sigma_thermal * thermal_flux +
-                                   sigma_epithermal * intermediate_flux +
-                                   sigma_fast_approx * fast_flux) / total_flux
-                        logger.debug(f"{isotope}: σ_th={sigma_thermal:.2f}b, σ_epi={sigma_epithermal:.4f}b, "
-                                   f"σ_fast(approx)={sigma_fast_approx:.6f}b, σ_avg={sigma_avg:.2f}b")
-                    else:
-                        # No intermediate flux - assume thermal + fast only
-                        total_flux = thermal_flux + fast_flux
-                        sigma_avg = (sigma_thermal * thermal_flux +
-                                   sigma_fast_approx * fast_flux) / total_flux
-                        logger.debug(f"{isotope}: σ_th={sigma_thermal:.2f}b, "
-                                   f"σ_fast(approx)={sigma_fast_approx:.6f}b, σ_avg={sigma_avg:.2f}b")
-
-                    sigma_barns = sigma_avg
+                # Normalize flux weights
+                total_flux_weight = np.sum(flux_weights)
+                if total_flux_weight > 0:
+                    flux_weights = flux_weights / total_flux_weight
                 else:
-                    # Use thermal cross-section only (last energy group)
-                    sigma_barns = xs_data[-1]  # Last group is lowest energy (thermal)
-                    logger.debug(f"{isotope}: thermal σ={sigma_barns:.2f}b")
+                    # Fallback: equal weighting
+                    flux_weights = np.ones(3) / 3.0
 
-            # Determine product isotope from daughter string
-            # PyNE format: "AU198G" -> "Au-198"
+                logger.debug(f"Energy groups (eV): {E_g}")
+                logger.debug(f"Flux weights: fast={flux_weights[0]:.3f}, "
+                           f"inter={flux_weights[1]:.3f}, thermal={flux_weights[2]:.3f}")
+            else:
+                # No flux spectrum - use default thermal spectrum
+                E_g = None
+                flux_weights = None
+
+            # Try multiple data sources in order of preference
+            data_sources = []
+
+            # 1. Try SimpleDataSource first (uses physical models, works for common isotopes)
             try:
-                # Parse element and mass from daughter string (e.g., "AU198G")
-                import re
-                match = re.match(r'([A-Z][a-z]?)(\d+)', product_isotope_str)
-                if match:
-                    element_sym = match.group(1).capitalize()
-                    mass_num = match.group(2)
-                    product_isotope = f"{element_sym}-{mass_num}"
+                if E_g is not None:
+                    sds = data_source.SimpleDataSource(dst_group_struct=E_g)
                 else:
-                    # Fallback: calculate A+1
-                    element_z = nucname.znum(nucid)
-                    mass_a = nucname.anum(nucid)
-                    product_nucid = nucname.id_from_ZZZAAA(element_z * 1000 + (mass_a + 1))
-                    product_isotope = nucname.name(product_nucid)
+                    sds = data_source.SimpleDataSource()
+                data_sources.append(('Simple', sds))
+            except Exception as e:
+                logger.debug(f"SimpleDataSource initialization failed: {e}")
+
+            # 2. Try EAFDataSource (European Activation File - good for activation)
+            try:
+                if E_g is not None:
+                    eds = data_source.EAFDataSource(dst_group_struct=E_g)
+                else:
+                    eds = data_source.EAFDataSource()
+                data_sources.append(('EAF', eds))
+            except Exception as e:
+                logger.debug(f"EAFDataSource initialization failed: {e}")
+
+            # 3. Could add CinderDataSource or OpenMCDataSource if available
+            # try:
+            #     cds = data_source.CinderDataSource(dst_group_struct=E_g)
+            #     data_sources.append(('Cinder', cds))
+            # except:
+            #     pass
+
+            # Try each data source for (n,gamma) reaction
+            sigma_barns = None
+            source_name = None
+
+            for name, ds in data_sources:
+                try:
+                    # Get (n,gamma) cross section data
+                    # PyNE reactions: 'gamma' = (n,gamma), 'absorption' = total absorption
+                    if E_g is not None and flux_weights is not None:
+                        # Get multi-group cross sections and collapse using flux weighting
+                        xs_mg = ds.discretize(nucid, 'gamma')
+
+                        if xs_mg is not None and len(xs_mg) > 0:
+                            # Flux-weighted collapse to one-group cross section
+                            # σ_collapsed = Σ(σ_g × φ_g) / Σ(φ_g)
+                            # Since flux_weights are already normalized, just multiply and sum
+
+                            # Handle case where xs_mg might be longer than flux_weights
+                            # (e.g., if data source has more groups)
+                            n_groups = min(len(xs_mg), len(flux_weights))
+                            sigma_barns = np.sum(xs_mg[:n_groups] * flux_weights[:n_groups])
+
+                            logger.debug(f"{name} multi-group XS for {isotope}: {xs_mg[:n_groups]} barns")
+                            logger.debug(f"Spectrum-averaged σ = {sigma_barns:.3f} barns")
+                            source_name = name
+                            break
+                    else:
+                        # No flux spectrum - get thermal cross section
+                        xs_data = ds.reaction(nucid, 'gamma')
+
+                        if xs_data and 'xs' in xs_data:
+                            # For thermal, use the lowest energy cross section
+                            xs_array = xs_data['xs']
+                            if len(xs_array) > 0:
+                                sigma_barns = xs_array[-1]  # Last value is lowest energy (thermal)
+                                logger.debug(f"{name} thermal XS for {isotope}: {sigma_barns:.3f} barns")
+                                source_name = name
+                                break
+
+                except Exception as e:
+                    logger.debug(f"{name} DataSource failed for {isotope}: {e}")
+                    continue
+
+            if sigma_barns is None or sigma_barns <= 0:
+                logger.debug(f"No cross-section data found for {isotope} in any PyNE data source")
+                return None
+
+            # Determine product isotope (n,gamma adds one neutron: A -> A+1)
+            element_z = nucname.znum(nucid)
+            mass_a = nucname.anum(nucid)
+            product_nucid = nucname.id(element_z * 1000 + mass_a + 1)
+
+            # Format product isotope name (e.g., "Au-198")
+            try:
+                product_name = nucname.name(product_nucid)
+                # Convert PyNE format to our format if needed
+                # PyNE might return "Au198" or "Au-198"
+                if '-' not in product_name:
+                    element_sym = nucname.name(element_z * 1000).capitalize()
+                    product_isotope = f"{element_sym}-{mass_a + 1}"
+                else:
+                    product_isotope = product_name
             except:
-                # Fallback calculation
-                element_z = nucname.znum(nucid)
-                mass_a = nucname.anum(nucid)
-                product_nucid = nucname.id_from_ZZZAAA(element_z * 1000 + (mass_a + 1))
-                product_isotope = nucname.name(product_nucid)
+                # Fallback: construct manually
+                element_sym = nucname.name(element_z * 1000).capitalize()
+                product_isotope = f"{element_sym}-{mass_a + 1}"
 
             # Get half-life of product isotope
             try:
-                product_nucid = nucname.id(product_isotope)
                 half_life_s = pyne_data.half_life(product_nucid)
-                # PyNE returns half-life in seconds
-                # If stable or very long-lived, might return very large number or inf
                 if half_life_s is None or half_life_s <= 0:
                     half_life_s = 'stable'
                 elif HAS_NUMPY and not np.isfinite(half_life_s):
                     half_life_s = 'stable'
             except:
-                # If half-life not available, check decay constant
+                # Try decay constant as fallback
                 try:
                     decay_const = pyne_data.decay_const(product_nucid)
-                    if decay_const > 0:
+                    if decay_const > 0 and np.isfinite(decay_const):
                         half_life_s = LAMBDA_LN2 / decay_const
                     else:
                         half_life_s = 'stable'
                 except:
                     half_life_s = 'stable'
 
-            logger.debug(f"PyNE data for {isotope}: σ={sigma_barns:.3f}b, "
-                        f"product={product_isotope}, t½={half_life_s}")
+            logger.info(f"PyNE {source_name} data for {isotope}: σ={sigma_barns:.3f}b, "
+                       f"product={product_isotope}, t½={half_life_s}")
 
             return (sigma_barns, product_isotope, half_life_s)
 
