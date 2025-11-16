@@ -711,8 +711,26 @@ class SampleIrradiationLog(models.Model):
         return self.sample.sample_id if self.sample else self.sample_id_text
 
     def fluence(self):
-        """Calculate total fluence (kW-hrs)"""
-        return float(self.actual_power) * (float(self.total_time) / 60)
+        """
+        Calculate total fluence (kW-hrs)
+        Fluence = Power × Time
+        Converts time to hours based on unit
+        """
+        power_kw = float(self.actual_power)
+        time = float(self.total_time)
+
+        # Convert time to hours based on unit
+        if self.total_time_unit == 'hr':
+            time_hours = time
+        elif self.total_time_unit == 'min':
+            time_hours = time / 60.0
+        elif self.total_time_unit == 'sec':
+            time_hours = time / 3600.0
+        else:
+            # Default to minutes if unknown
+            time_hours = time / 60.0
+
+        return power_kw * time_hours
 
     def within_limits(self):
         """Check if irradiation is within IRF limits"""
