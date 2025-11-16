@@ -964,9 +964,127 @@ class ActivationResult(models.Model):
     def __str__(self):
         return f"{self.sample.sample_id} - {self.calculated_at.strftime('%Y-%m-%d %H:%M')} ({self.number_of_isotopes} isotopes)"
 
+
+class ActivationTimeline(models.Model):
+    """
+    Stores activation timeline - intermediate states after each irradiation/decay step
+    Enables visualization of activity evolution over time
+    """
+
+    activation_result = models.ForeignKey(
+        ActivationResult,
+        on_delete=models.CASCADE,
+        related_name='timeline_entries',
+        help_text="Parent activation result this timeline belongs to"
+    )
+
+    # Step identification
+    step_number = models.IntegerField(
+        help_text="Sequential step number (0=initial, 1=after first irr, etc.)"
+    )
+
+    STEP_TYPE_CHOICES = [
+        ('initial', 'Initial State'),
+        ('irradiation', 'After Irradiation'),
+        ('decay', 'After Decay Period'),
+        ('current', 'Current Date'),
+    ]
+
+    step_type = models.CharField(
+        max_length=20,
+        choices=STEP_TYPE_CHOICES,
+        help_text="Type of timeline step"
+    )
+
+    # Timestamp for this step
+    step_datetime = models.DateTimeField(
+        help_text="Date/time of this step in the timeline"
+    )
+
+    # Description
+    description = models.CharField(
+        max_length=200,
+        help_text="Human-readable description of this step"
+    )
+
+    # Inventory at this step
+    inventory = models.JSONField(
+        help_text="Isotopic inventory (atoms) at this step: {isotope: n_atoms}"
+    )
+
+    # Activities at this step
+    total_activity_bq = models.DecimalField(
+        max_digits=20,
+        decimal_places=4,
+        help_text="Total activity at this step (Bq)"
+    )
+
+    # Dominant isotopes (for quick reference)
+    dominant_isotopes = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Top isotopes by activity: {isotope: activity_bq}"
+    )
+
+    # Dose rate at this step
+    estimated_dose_rate_1ft = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Estimated dose rate at 1 foot (mrem/hr)"
+    )
+
+    # Optional: link to specific irradiation log if this step is after an irradiation
+    irradiation_log = models.ForeignKey(
+        'SampleIrradiationLog',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='timeline_entries',
+        help_text="Irradiation log if this step follows an irradiation"
+    )
+
+    # Time deltas for decay periods
+    decay_time_seconds = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text="Decay time in seconds (for decay steps)"
+    )
+
+    class Meta:
+        ordering = ['activation_result', 'step_number']
+        verbose_name = 'Activation Timeline Entry'
+        verbose_name_plural = 'Activation Timeline Entries'
+        unique_together = ['activation_result', 'step_number']
+
+    def __str__(self):
+        return f"{self.activation_result.sample.sample_id} - Step {self.step_number}: {self.description}"
+
+    def get_activity_mci(self):
+        """Get total activity in mCi"""
+        return float(self.total_activity_bq) / 3.7e10 * 1000
+
     def get_activity_ci(self):
-        """Convert total activity to Curies"""
+        """Get total activity in Ci"""
         return float(self.total_activity_bq) / 3.7e10
+
+    def get_decay_time_display(self):
+        """Format decay time for display"""
+        if not self.decay_time_seconds:
+            return None
+
+        seconds = self.decay_time_seconds
+        days = seconds // 86400
+        hours = (seconds % 86400) // 3600
+        minutes = (seconds % 3600) // 60
+
+        if days > 0:
+            return f"{days} days, {hours} hours"
+        elif hours > 0:
+            return f"{hours} hours, {minutes} minutes"
+        else:
+            return f"{minutes} minutes"
 
     def get_dominant_isotopes(self, min_fraction=0.01):
         """

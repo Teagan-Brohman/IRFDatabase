@@ -136,7 +136,7 @@ class ActivationCalculator:
             logger.warning("Multi-group requested but PyNE not available. Using one-group.")
 
     def calculate_activation(self, sample, irradiation_logs, flux_configs,
-                            min_activity_fraction=0.001, use_cache=True):
+                            min_activity_fraction=0.001, use_cache=True, track_timeline=True):
         """
         Calculate the isotopic inventory for a sample based on its irradiation history
 
@@ -146,6 +146,7 @@ class ActivationCalculator:
             flux_configs: Dict mapping location names to FluxConfiguration instances
             min_activity_fraction: Minimum activity fraction to include in results (default 0.1%)
             use_cache: Whether to use cached results if available
+            track_timeline: If True, save intermediate states to timeline (default: True)
 
         Returns:
             dict with calculation results or None if calculation fails
@@ -168,6 +169,28 @@ class ActivationCalculator:
 
             # Initialize inventory (number of atoms of each isotope)
             inventory = self._initialize_inventory(composition, sample)
+
+            # Initialize timeline tracking
+            timeline = [] if track_timeline else None
+            step_number = 0
+
+            # Save initial state if tracking timeline
+            if track_timeline and len(irradiation_logs) > 0:
+                first_irr_date = datetime.combine(
+                    irradiation_logs[0].irradiation_date,
+                    irradiation_logs[0].time_in
+                ) - timedelta(days=1)
+
+                timeline.append({
+                    'step_number': step_number,
+                    'step_type': 'initial',
+                    'step_datetime': first_irr_date,
+                    'description': 'Initial state (before irradiation)',
+                    'inventory': inventory.copy(),
+                    'irradiation_log': None,
+                    'decay_time_seconds': None
+                })
+                step_number += 1
 
             # Process each irradiation in chronological order
             reference_time = None
@@ -203,10 +226,43 @@ class ActivationCalculator:
                     })
                     continue
 
+                # Track decay period if there was a previous irradiation
+                if track_timeline and reference_time:
+                    irr_start = datetime.combine(log.irradiation_date, log.time_in)
+                    decay_time_s = (irr_start - reference_time).total_seconds()
+
+                    if decay_time_s > 0:
+                        # Decay inventory for timeline (actual decay happens in _process_irradiation)
+                        decayed_inventory = self._decay_inventory(inventory.copy(), decay_time_s)
+
+                        timeline.append({
+                            'step_number': step_number,
+                            'step_type': 'decay',
+                            'step_datetime': irr_start - timedelta(seconds=1),
+                            'description': f'After {decay_time_s/86400:.1f} day decay period',
+                            'inventory': decayed_inventory,
+                            'irradiation_log': None,
+                            'decay_time_seconds': int(decay_time_s)
+                        })
+                        step_number += 1
+
                 # Calculate inventory after this irradiation + decay
                 inventory, reference_time = self._process_irradiation(
                     inventory, log, flux_config, reference_time
                 )
+
+                # Track post-irradiation state
+                if track_timeline:
+                    timeline.append({
+                        'step_number': step_number,
+                        'step_type': 'irradiation',
+                        'step_datetime': reference_time,
+                        'description': f'After irradiation at {log.actual_location}',
+                        'inventory': inventory.copy(),
+                        'irradiation_log': log,
+                        'decay_time_seconds': None
+                    })
+                    step_number += 1
 
             # Check if all irradiations were skipped
             if reference_time is None:
@@ -221,6 +277,26 @@ class ActivationCalculator:
                     'skipped_irradiations': skipped_irradiations,
                 }
 
+            # Decay to current date if tracking timeline
+            if track_timeline and reference_time:
+                current_date = datetime.now()
+                if current_date > reference_time:
+                    decay_to_current_s = (current_date - reference_time).total_seconds()
+
+                    # Decay inventory to current date
+                    current_inventory = self._decay_inventory(inventory.copy(), decay_to_current_s)
+
+                    # Save current state to timeline
+                    timeline.append({
+                        'step_number': step_number,
+                        'step_type': 'current',
+                        'step_datetime': current_date,
+                        'description': f'Current date ({decay_to_current_s/86400:.0f} days after last irradiation)',
+                        'inventory': current_inventory,
+                        'irradiation_log': None,
+                        'decay_time_seconds': int(decay_to_current_s)
+                    })
+
             # Convert inventory to activities at reference time
             results = self._calculate_activities(inventory, reference_time, min_activity_fraction)
 
@@ -231,6 +307,7 @@ class ActivationCalculator:
             results['irradiation_hash'] = irr_hash
             results['calculation_successful'] = True
             results['skipped_irradiations'] = skipped_irradiations  # Include skipped irradiations
+            results['timeline'] = timeline if track_timeline else None  # Include timeline
 
             # Estimate dose rate (simplified - can be improved)
             results['estimated_dose_rate_1ft'] = self._estimate_dose_rate(results['isotopes'])
@@ -265,6 +342,219 @@ class ActivationCalculator:
 
         hash_string = "||".join(hash_data)
         return hashlib.sha256(hash_string.encode()).hexdigest()
+
+    def _save_timeline_to_db(self, activation_result, timeline, min_activity_fraction=0.001):
+        """
+        Save timeline entries to database
+
+        Args:
+            activation_result: ActivationResult instance
+            timeline: List of timeline dictionaries from calculate_activation
+            min_activity_fraction: Minimum activity fraction for dominant isotopes
+
+        Returns:
+            Number of timeline entries created
+        """
+        from .models import ActivationTimeline
+        from decimal import Decimal
+
+        if not timeline:
+            logger.debug("No timeline to save")
+            return 0
+
+        # Clear existing timeline for this result
+        ActivationTimeline.objects.filter(activation_result=activation_result).delete()
+
+        entries_created = 0
+
+        # Create timeline entries
+        for entry in timeline:
+            # Calculate activities for this inventory
+            activities = self._calculate_activities(
+                entry['inventory'],
+                entry['step_datetime'],
+                min_activity_fraction=min_activity_fraction
+            )
+
+            # Calculate total activity
+            total_activity = sum(iso['activity_bq'] for iso in activities['isotopes'].values())
+
+            # Get top 5 dominant isotopes
+            dominant = {}
+            sorted_isotopes = sorted(
+                activities['isotopes'].items(),
+                key=lambda x: x[1]['activity_bq'],
+                reverse=True
+            )[:5]
+
+            for isotope, data in sorted_isotopes:
+                dominant[isotope] = data['activity_bq']
+
+            # Calculate dose rate
+            dose_rate = self._estimate_dose_rate(activities['isotopes'])
+
+            # Create timeline entry
+            ActivationTimeline.objects.create(
+                activation_result=activation_result,
+                step_number=entry['step_number'],
+                step_type=entry['step_type'],
+                step_datetime=entry['step_datetime'],
+                description=entry['description'],
+                inventory=entry['inventory'],
+                total_activity_bq=Decimal(str(total_activity)),
+                dominant_isotopes=dominant,
+                estimated_dose_rate_1ft=Decimal(str(dose_rate)) if dose_rate else None,
+                irradiation_log=entry.get('irradiation_log'),
+                decay_time_seconds=entry.get('decay_time_seconds')
+            )
+            entries_created += 1
+
+        logger.info(f"Saved {entries_created} timeline entries for {activation_result}")
+        return entries_created
+
+    def decay_to_date(self, sample, target_date, irradiation_logs=None, flux_configs=None,
+                     min_activity_fraction=0.001):
+        """
+        Calculate isotopic inventory and activity at an arbitrary future date
+
+        This method calculates the complete activation history through all irradiations,
+        then decays the final inventory to the specified target date.
+
+        Args:
+            sample: Sample instance
+            target_date: datetime object for target date (must be timezone-aware or naive to match logs)
+            irradiation_logs: Optional QuerySet of SampleIrradiationLog entries
+                            (if None, fetches from database)
+            flux_configs: Optional dict mapping location -> FluxConfiguration
+                         (if None, fetches from database)
+            min_activity_fraction: Minimum activity fraction to include in results (default 0.001)
+
+        Returns:
+            dict with:
+                'success': bool - whether calculation succeeded
+                'target_date': str - ISO format of target date
+                'inventory': dict - isotopic inventory at target date {isotope: n_atoms}
+                'activities': dict - activity data at target date
+                'total_activity_bq': float - total activity in Bq
+                'total_activity_mci': float - total activity in mCi
+                'total_activity_ci': float - total activity in Ci
+                'estimated_dose_rate_1ft': float - dose rate in mrem/hr at 1 foot
+                'decay_time_seconds': int - seconds from last irradiation to target date
+                'decay_time_days': float - days from last irradiation to target date
+                'last_irradiation_date': str - ISO format of last irradiation
+                'error': str - error message if success=False
+        """
+        from datetime import datetime
+
+        # Get irradiation logs if not provided
+        if irradiation_logs is None:
+            irradiation_logs = sample.irradiation_logs.all().order_by('irradiation_datetime')
+
+        # Check if there are any irradiations
+        if not irradiation_logs.exists():
+            return {
+                'success': False,
+                'error': 'Sample has no irradiation history',
+                'target_date': target_date.isoformat(),
+            }
+
+        # Calculate activation through all irradiations (without timeline tracking to save processing)
+        results = self.calculate_activation(
+            sample=sample,
+            irradiation_logs=irradiation_logs,
+            flux_configs=flux_configs,
+            min_activity_fraction=min_activity_fraction,
+            use_cache=False,  # Don't use cache for intermediate calculation
+            track_timeline=False  # Don't need full timeline, just final inventory
+        )
+
+        if not results.get('calculation_successful', False):
+            return {
+                'success': False,
+                'error': results.get('error', 'Activation calculation failed'),
+                'target_date': target_date.isoformat(),
+            }
+
+        # Get the reference time (end of last irradiation)
+        last_log = irradiation_logs.last()
+        last_irradiation_date = results.get('reference_time')
+
+        if isinstance(last_irradiation_date, str):
+            last_irradiation_date = datetime.fromisoformat(last_irradiation_date)
+
+        # Validate target date is after last irradiation
+        if target_date < last_irradiation_date:
+            return {
+                'success': False,
+                'error': f'Target date ({target_date.isoformat()}) is before last irradiation ({last_irradiation_date.isoformat()})',
+                'target_date': target_date.isoformat(),
+                'last_irradiation_date': last_irradiation_date.isoformat(),
+            }
+
+        # Calculate decay time
+        decay_time = target_date - last_irradiation_date
+        decay_time_seconds = int(decay_time.total_seconds())
+        decay_time_days = decay_time_seconds / 86400.0
+
+        # Get final inventory from activation calculation
+        # The inventory is stored in results['isotopes'] with activity data
+        # We need to reconstruct atom counts from the activities
+        final_inventory = {}
+        isotopes_data = results.get('isotopes', {})
+
+        # For each isotope in the results, get the number of atoms
+        # This is tricky because results store activity, not atoms
+        # We need to back-calculate: N = Activity / λ where λ = ln(2)/t_half
+        for isotope, iso_data in isotopes_data.items():
+            activity_bq = iso_data.get('activity_bq', 0)
+            half_life_s = iso_data.get('half_life_seconds', None)
+
+            if half_life_s and half_life_s > 0 and activity_bq > 0:
+                decay_constant = np.log(2) / half_life_s
+                n_atoms = activity_bq / decay_constant
+                final_inventory[isotope] = n_atoms
+            elif activity_bq > 0:
+                # Stable isotope or unknown half-life - store with zero activity
+                final_inventory[isotope] = 0
+
+        # Also include stable parent isotopes from composition
+        composition = self._get_sample_composition(sample)
+        for element, isotopes in composition.items():
+            for isotope, fraction in isotopes.items():
+                if isotope not in final_inventory:
+                    # Calculate initial number of atoms
+                    n_atoms = self._calculate_initial_atoms(sample, element, isotope, fraction)
+                    final_inventory[isotope] = n_atoms
+
+        # Decay inventory to target date
+        decayed_inventory = self._decay_inventory(final_inventory.copy(), decay_time_seconds)
+
+        # Calculate activities at target date
+        activities = self._calculate_activities(
+            decayed_inventory,
+            target_date,
+            min_activity_fraction=min_activity_fraction
+        )
+
+        total_activity_bq = sum(iso['activity_bq'] for iso in activities['isotopes'].values())
+
+        # Estimate dose rate
+        dose_rate = self._estimate_dose_rate(activities['isotopes'])
+
+        return {
+            'success': True,
+            'target_date': target_date.isoformat(),
+            'last_irradiation_date': last_irradiation_date.isoformat(),
+            'decay_time_seconds': decay_time_seconds,
+            'decay_time_days': decay_time_days,
+            'inventory': decayed_inventory,
+            'activities': activities,
+            'total_activity_bq': total_activity_bq,
+            'total_activity_mci': total_activity_bq / 3.7e10 * 1000,  # Convert to mCi
+            'total_activity_ci': total_activity_bq / 3.7e10,  # Convert to Ci
+            'estimated_dose_rate_1ft': dose_rate,
+            'number_of_isotopes': len(activities['isotopes']),
+        }
 
     def _get_cached_result(self, sample, irr_hash):
         """Check for cached activation result"""

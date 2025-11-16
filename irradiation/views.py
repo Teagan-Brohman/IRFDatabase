@@ -713,6 +713,7 @@ def calculate_sample_isotopics(request, pk):
 def _save_activation_result(sample, results, use_multigroup):
     """Helper function to save activation results to database"""
     from .models import ActivationResult
+    from .activation import ActivationCalculator
     from datetime import datetime
     import logging
 
@@ -743,5 +744,225 @@ def _save_activation_result(sample, results, use_multigroup):
         else:
             logger.info(f"Updated activation result for {sample.sample_id}")
 
+        # Save timeline if present in results
+        if 'timeline' in results and results['timeline']:
+            calculator = ActivationCalculator(use_multigroup=use_multigroup)
+            entries_saved = calculator._save_timeline_to_db(result, results['timeline'])
+            logger.info(f"Saved {entries_saved} timeline entries for {sample.sample_id}")
+
     except Exception as e:
         logger.error(f"Failed to save activation result: {e}")
+
+
+def get_sample_timeline(request, pk):
+    """
+    Get timeline data for a sample showing activity at each step
+
+    Returns JSON with timeline entries including:
+    - Initial state
+    - Post-irradiation states
+    - Decay periods
+    - Current date
+
+    Args:
+        request: HTTP request
+        pk: Sample primary key
+
+    Query parameters:
+        min_fraction: Minimum activity fraction (default 0.001)
+
+    Returns:
+        JsonResponse with timeline data
+    """
+    from .models import ActivationResult
+    from datetime import datetime
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        sample = get_object_or_404(Sample, pk=pk)
+
+        # Get the most recent activation result for this sample
+        activation_result = ActivationResult.objects.filter(
+            sample=sample,
+            calculation_successful=True
+        ).order_by('-reference_time').first()
+
+        if not activation_result:
+            return JsonResponse({
+                'success': False,
+                'error': 'No activation results found. Please calculate isotopics first.'
+            }, status=404)
+
+        # Get timeline entries
+        timeline_entries = activation_result.timeline_entries.all().order_by('step_number')
+
+        if not timeline_entries.exists():
+            return JsonResponse({
+                'success': False,
+                'error': 'No timeline data found. Timeline may not have been calculated yet.'
+            }, status=404)
+
+        # Format timeline data for JSON response
+        timeline_data = []
+        for entry in timeline_entries:
+            timeline_data.append({
+                'step_number': entry.step_number,
+                'step_type': entry.step_type,
+                'step_datetime': entry.step_datetime.isoformat(),
+                'description': entry.description,
+                'total_activity_bq': float(entry.total_activity_bq),
+                'total_activity_mci': entry.get_activity_mci(),
+                'total_activity_ci': entry.get_activity_ci(),
+                'estimated_dose_rate_1ft': float(entry.estimated_dose_rate_1ft) if entry.estimated_dose_rate_1ft else None,
+                'dominant_isotopes': entry.dominant_isotopes or {},
+                'decay_time_display': entry.get_decay_time_display() if entry.decay_time_seconds else None,
+                'decay_time_days': entry.decay_time_seconds / 86400 if entry.decay_time_seconds else None,
+            })
+
+        response_data = {
+            'success': True,
+            'sample_id': sample.sample_id,
+            'timeline': timeline_data,
+            'reference_time': activation_result.reference_time.isoformat(),
+            'total_steps': timeline_entries.count(),
+        }
+
+        return JsonResponse(response_data)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        logger.error(f"Error getting timeline for sample {pk}: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+def calculate_activity_at_date(request, pk):
+    """
+    Calculate isotopic inventory and activity at a specific future date
+
+    Args:
+        request: HTTP request
+        pk: Sample primary key
+
+    Query parameters:
+        date: Target date in ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)
+        min_fraction: Minimum activity fraction (default 0.001)
+        multigroup: Use multi-group cross sections (default true)
+
+    Returns:
+        JsonResponse with activity data at target date
+    """
+    from .models import FluxConfiguration
+    from .activation import ActivationCalculator
+    from datetime import datetime
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        sample = get_object_or_404(Sample, pk=pk)
+
+        # Get target date from query parameter
+        date_str = request.GET.get('date')
+        if not date_str:
+            return JsonResponse({
+                'success': False,
+                'error': 'Missing required parameter: date'
+            }, status=400)
+
+        try:
+            # Parse date - handle both date and datetime formats
+            if 'T' in date_str:
+                target_date = datetime.fromisoformat(date_str)
+            else:
+                # If only date provided, assume end of day
+                target_date = datetime.fromisoformat(f"{date_str}T23:59:59")
+        except ValueError as e:
+            return JsonResponse({
+                'success': False,
+                'error': f'Invalid date format: {date_str}. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)'
+            }, status=400)
+
+        # Get irradiation logs
+        logs = sample.get_irradiation_logs().order_by('irradiation_date', 'time_in')
+
+        if not logs.exists():
+            return JsonResponse({
+                'success': False,
+                'error': 'No irradiation history found for this sample.'
+            }, status=400)
+
+        # Get flux configurations
+        flux_configs = {}
+        for config in FluxConfiguration.objects.all():
+            flux_configs[config.location] = config
+
+        if not flux_configs:
+            return JsonResponse({
+                'success': False,
+                'error': 'No flux configurations found. Please configure flux values in Admin.'
+            }, status=400)
+
+        # Get calculation parameters
+        use_multigroup = request.GET.get('multigroup', 'true').lower() == 'true'
+        min_fraction = float(request.GET.get('min_fraction', '0.001'))
+
+        # Initialize calculator
+        calculator = ActivationCalculator(use_multigroup=use_multigroup)
+
+        # Calculate activity at target date
+        results = calculator.decay_to_date(
+            sample=sample,
+            target_date=target_date,
+            irradiation_logs=logs,
+            flux_configs=flux_configs,
+            min_activity_fraction=min_fraction
+        )
+
+        if not results.get('success', False):
+            return JsonResponse({
+                'success': False,
+                'error': results.get('error', 'Calculation failed')
+            }, status=400)
+
+        # Format isotopes data for JSON response
+        isotopes_data = {}
+        for isotope, data in results.get('activities', {}).get('isotopes', {}).items():
+            isotopes_data[isotope] = {
+                'activity_bq': data['activity_bq'],
+                'activity_mci': data['activity_bq'] / 3.7e10 * 1000,
+                'activity_ci': data['activity_bq'] / 3.7e10,
+                'half_life_seconds': data.get('half_life_seconds'),
+                'half_life_display': data.get('half_life_display', 'Unknown'),
+            }
+
+        response_data = {
+            'success': True,
+            'sample_id': sample.sample_id,
+            'target_date': results['target_date'],
+            'last_irradiation_date': results['last_irradiation_date'],
+            'decay_time_days': results['decay_time_days'],
+            'decay_time_seconds': results['decay_time_seconds'],
+            'total_activity_bq': results['total_activity_bq'],
+            'total_activity_mci': results['total_activity_mci'],
+            'total_activity_ci': results['total_activity_ci'],
+            'estimated_dose_rate_1ft': results['estimated_dose_rate_1ft'],
+            'isotopes': isotopes_data,
+            'number_of_isotopes': results['number_of_isotopes'],
+        }
+
+        return JsonResponse(response_data)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        logger.error(f"Error calculating activity at date for sample {pk}: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
