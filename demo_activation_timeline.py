@@ -100,11 +100,12 @@ def demonstrate_decay_timeline():
         version_number=1,
         sample_description='Gold activation timeline demo',
         requester_name='Demo User',
-        requester_dept='Nuclear Engineering',
         status='approved',
         max_power=Decimal('200.0'),
-        max_irradiation_time=Decimal('24.0'),
-        max_irradiation_time_unit='hours'
+        max_time=Decimal('24.0'),
+        max_time_unit='hours',
+        max_mass=Decimal('10.0'),  # Required field
+        max_mass_unit='g'
     )
     print(f"   ✓ Created IRF: {irf.irf_number}\n")
 
