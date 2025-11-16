@@ -656,7 +656,7 @@ def calculate_sample_isotopics(request, pk):
             }, status=400)
 
         # Get calculation parameters from request
-        use_multigroup = request.GET.get('multigroup', 'true').lower() == 'true'
+        use_multigroup = request.GET.get('use_multigroup', request.GET.get('multigroup', 'true')).lower() == 'true'
         min_fraction = float(request.GET.get('min_fraction', '0.001'))
         use_cache = request.GET.get('use_cache', 'true').lower() == 'true'
 

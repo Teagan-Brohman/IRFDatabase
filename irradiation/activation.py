@@ -373,7 +373,7 @@ class ActivationCalculator:
             activities = self._calculate_activities(
                 entry['inventory'],
                 entry['step_datetime'],
-                min_activity_fraction=min_activity_fraction
+                min_activity_fraction
             )
 
             # Calculate total activity
@@ -507,7 +507,7 @@ class ActivationCalculator:
         # We need to back-calculate: N = Activity / λ where λ = ln(2)/t_half
         for isotope, iso_data in isotopes_data.items():
             activity_bq = iso_data.get('activity_bq', 0)
-            half_life_s = iso_data.get('half_life_seconds', None)
+            half_life_s = iso_data.get('half_life_s', iso_data.get('half_life_seconds', None))
 
             if half_life_s and half_life_s > 0 and activity_bq > 0:
                 decay_constant = np.log(2) / half_life_s
@@ -533,7 +533,7 @@ class ActivationCalculator:
         activities = self._calculate_activities(
             decayed_inventory,
             target_date,
-            min_activity_fraction=min_activity_fraction
+            min_activity_fraction
         )
 
         total_activity_bq = sum(iso['activity_bq'] for iso in activities['isotopes'].values())
@@ -576,6 +576,49 @@ class ActivationCalculator:
             pass
 
         return None
+
+    def _calculate_initial_atoms(self, sample, element, isotope, fraction):
+        """
+        Calculate initial number of atoms for a given element/isotope in sample
+
+        Args:
+            sample: Sample instance
+            element: Element symbol (e.g., 'Au')
+            isotope: Isotope name (e.g., 'Au-197')
+            fraction: Atomic fraction (0-1)
+
+        Returns:
+            float: Number of atoms
+        """
+        # Get sample mass
+        if not sample.mass:
+            return 0
+
+        mass_value = float(sample.mass)
+        mass_unit = sample.mass_unit if sample.mass_unit else 'g'
+
+        # Convert to grams
+        if mass_unit == 'mg':
+            mass_g = mass_value / 1000.0
+        elif mass_unit == 'kg':
+            mass_g = mass_value * 1000.0
+        else:  # 'g' or default
+            mass_g = mass_value
+
+        # Extract mass number from isotope name (e.g., "Au-197" -> 197)
+        try:
+            mass_number = int(isotope.split('-')[1])
+        except (IndexError, ValueError):
+            # If can't parse, use natural isotope mass number
+            logger.warning(f"Could not parse mass number from {isotope}, using approximate value")
+            mass_number = 197  # Default for gold, adjust as needed
+
+        # Calculate number of atoms: N = (mass * fraction * N_A) / A
+        # Where N_A = Avogadro's number = 6.022e23
+        element_mass_g = mass_g * fraction
+        n_atoms = (element_mass_g * 6.022e23) / mass_number
+
+        return n_atoms
 
     def _get_sample_composition(self, sample):
         """
