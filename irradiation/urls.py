@@ -30,4 +30,6 @@ urlpatterns = [
     path('api/irf-autocomplete/', views.irf_autocomplete, name='irf_autocomplete'),
     path('api/sample-autocomplete/', views.sample_autocomplete, name='sample_autocomplete'),
     path('api/sample/<int:pk>/calculate-isotopics/', views.calculate_sample_isotopics, name='calculate_isotopics'),
+    path('api/sample/<int:pk>/timeline/', views.get_sample_timeline, name='sample_timeline'),
+    path('api/sample/<int:pk>/activity-at/', views.calculate_activity_at_date, name='activity_at_date'),
 ]

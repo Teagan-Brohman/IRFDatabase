@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from .models import (
     IrradiationRequestForm, SampleIrradiationLog, Sample, SampleComponent,
-    FluxConfiguration, SampleComposition, ActivationResult
+    FluxConfiguration, SampleComposition, ActivationResult, ActivationTimeline
 )
 
 
@@ -648,6 +648,119 @@ class ActivationResultAdmin(admin.ModelAdmin):
         """Display activity in Curies"""
         return f"{obj.get_activity_ci():.4e} Ci"
     total_activity_ci_display.short_description = 'Activity (Ci)'
+
+
+@admin.register(ActivationTimeline)
+class ActivationTimelineAdmin(admin.ModelAdmin):
+    """Admin interface for Activation Timeline Entries"""
+
+    list_display = [
+        'activation_result',
+        'step_number',
+        'step_type',
+        'step_datetime',
+        'activity_display',
+        'dose_rate_display',
+    ]
+
+    list_filter = [
+        'step_type',
+        'step_datetime',
+    ]
+
+    search_fields = [
+        'activation_result__sample__sample_id',
+        'description',
+    ]
+
+    readonly_fields = [
+        'step_number',
+        'step_datetime',
+        'total_activity_bq',
+        'activity_mci_display',
+        'activity_ci_display',
+        'estimated_dose_rate_1ft',
+        'decay_time_display_formatted',
+        'dominant_isotopes_display',
+    ]
+
+    fieldsets = (
+        ('Timeline Step', {
+            'fields': (
+                'activation_result',
+                'step_number',
+                'step_type',
+                'step_datetime',
+                'description',
+            )
+        }),
+        ('Activity Data', {
+            'fields': (
+                'total_activity_bq',
+                'activity_mci_display',
+                'activity_ci_display',
+                'estimated_dose_rate_1ft',
+            )
+        }),
+        ('Decay Information', {
+            'fields': (
+                'decay_time_seconds',
+                'decay_time_display_formatted',
+            )
+        }),
+        ('Isotopic Data', {
+            'fields': (
+                'dominant_isotopes_display',
+                'inventory',
+            ),
+            'classes': ('collapse',),
+        }),
+        ('Linked Data', {
+            'fields': (
+                'irradiation_log',
+            )
+        }),
+    )
+
+    def activity_display(self, obj):
+        """Display activity in mCi"""
+        return f"{obj.get_activity_mci():.2f} mCi"
+    activity_display.short_description = 'Activity'
+
+    def dose_rate_display(self, obj):
+        """Display dose rate"""
+        if obj.estimated_dose_rate_1ft:
+            return f"{float(obj.estimated_dose_rate_1ft):.2f} mrem/hr"
+        return "-"
+    dose_rate_display.short_description = 'Dose Rate (1 ft)'
+
+    def activity_mci_display(self, obj):
+        """Display activity in mCi"""
+        return f"{obj.get_activity_mci():.4f} mCi"
+    activity_mci_display.short_description = 'Activity (mCi)'
+
+    def activity_ci_display(self, obj):
+        """Display activity in Ci"""
+        return f"{obj.get_activity_ci():.4e} Ci"
+    activity_ci_display.short_description = 'Activity (Ci)'
+
+    def decay_time_display_formatted(self, obj):
+        """Display formatted decay time"""
+        return obj.get_decay_time_display() if obj.decay_time_seconds else "-"
+    decay_time_display_formatted.short_description = 'Decay Time'
+
+    def dominant_isotopes_display(self, obj):
+        """Display dominant isotopes as formatted list"""
+        if not obj.dominant_isotopes:
+            return "-"
+
+        lines = []
+        for isotope, activity_bq in obj.dominant_isotopes.items():
+            activity_mci = activity_bq / 3.7e10 * 1000
+            lines.append(f"{isotope}: {activity_mci:.2f} mCi")
+
+        return format_html("<br>".join(lines))
+    dominant_isotopes_display.short_description = 'Dominant Isotopes'
 
 
 # Customize admin site headers
