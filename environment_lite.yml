@@ -1,0 +1,29 @@
+name: irfdatabase
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  # Python version
+  - python>=3.10
+
+  # Django and web framework
+  - django>=5.0,<5.1
+  - django-crispy-forms>=2.1
+  - crispy-bootstrap5>=2.0
+  - django-filter>=23.5
+  - django-import-export>=3.3
+
+  # Utilities
+  - python-dateutil>=2.8
+  - pillow>=10.0
+
+  # Scientific computing and nuclear data
+  - numpy>=1.24.0
+  - scipy>=1.10.0
+  - radioactivedecay>=0.4.0
+
+  # Development tools
+  - pip
+
+  # Note: PyNE excluded to reduce memory usage during installation
+  # PyNE can be installed later if needed with: mamba install -c conda-forge pyne
