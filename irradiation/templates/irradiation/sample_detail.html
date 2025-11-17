@@ -386,6 +386,28 @@
                                                 <span id="targetDecayTime" class="text-muted"></span>
                                             </div>
                                         </div>
+
+                                        <!-- Isotope Breakdown -->
+                                        <div class="mt-3">
+                                            <h6>Isotope Breakdown (<span id="targetIsotopeCount"></span> isotopes):</h6>
+                                            <div class="table-responsive">
+                                                <table class="table table-sm table-hover" id="targetIsotopesTable">
+                                                    <thead class="table-light">
+                                                        <tr>
+                                                            <th>Isotope</th>
+                                                            <th>Activity (Bq)</th>
+                                                            <th>Activity (Ci)</th>
+                                                            <th>Atoms</th>
+                                                            <th>Mass</th>
+                                                            <th>Half-life</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody id="targetIsotopesBody">
+                                                        <!-- Populated by JavaScript -->
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -519,7 +541,7 @@ function calculateIsotopics() {
     document.getElementById('activationResultsSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
     // Make API request
-    const url = `/api/sample/${sampleId}/calculate-isotopics/?use_multigroup=true&min_fraction=0.001&use_cache=true`;
+    const url = `/api/sample/${sampleId}/calculate-isotopics/?use_multigroup=true&min_fraction=0.001&use_cache=false`;
 
     fetch(url)
         .then(response => {
@@ -887,6 +909,7 @@ function displayTimeline(timeline) {
                                         <th>Half-Life</th>
                                         <th>% of Total Activity</th>
                                         <th>Atoms</th>
+                                        <th>Mass</th>
                                     </tr>
                                 </thead>
                                 <tbody id="isotope-tbody-${index}">
@@ -924,6 +947,23 @@ function displayTimeline(timeline) {
                 const isoUnit = currentActivityUnit === 'bq' ? 'Bq' : 'Ci';
                 const fraction = ((data.fraction || 0) * 100).toFixed(2);
 
+                // Format mass with appropriate units
+                let massDisplay;
+                const mass_g = data.mass_g || 0;
+                if (mass_g >= 1) {
+                    massDisplay = mass_g.toFixed(3) + ' g';
+                } else if (mass_g >= 0.001) {
+                    massDisplay = (mass_g * 1000).toFixed(3) + ' mg';
+                } else if (mass_g >= 0.000001) {
+                    massDisplay = (mass_g * 1e6).toFixed(3) + ' μg';
+                } else if (mass_g >= 0.000000001) {
+                    massDisplay = (mass_g * 1e9).toFixed(3) + ' ng';
+                } else if (mass_g > 0) {
+                    massDisplay = formatScientific(mass_g) + ' g';
+                } else {
+                    massDisplay = '—';
+                }
+
                 const isoRow = document.createElement('tr');
                 if (isStable) {
                     isoRow.classList.add('table-secondary');
@@ -947,6 +987,7 @@ function displayTimeline(timeline) {
                         `}
                     </td>
                     <td style="white-space: nowrap; min-width: 120px;">${formatScientific(data.atoms)}</td>
+                    <td style="white-space: nowrap;">${massDisplay}</td>
                 `;
                 isotopeTbody.appendChild(isoRow);
             });
@@ -1011,13 +1052,17 @@ function calculateActivityAtDate() {
                 const activity = currentActivityUnit === 'bq' ? data.total_activity_bq : data.total_activity_ci;
                 const activityUnit = currentActivityUnit === 'bq' ? 'Bq' : 'Ci';
 
+                // Display the target date without timezone conversion
+                // Parse the ISO string and display it as-is
+                const targetDateObj = new Date(data.target_date);
                 document.getElementById('targetDateDisplay').textContent =
-                    new Date(data.target_date).toLocaleString('en-US', {
+                    targetDateObj.toLocaleString('en-US', {
                         year: 'numeric',
                         month: 'long',
                         day: 'numeric',
                         hour: '2-digit',
-                        minute: '2-digit'
+                        minute: '2-digit',
+                        timeZone: 'America/Chicago'  // Use server timezone to match input
                     });
                 document.getElementById('targetActivity').textContent =
                     formatScientific(activity) + ' ' + activityUnit;
@@ -1025,6 +1070,59 @@ function calculateActivityAtDate() {
                     (data.estimated_dose_rate_1ft || 0).toFixed(2);
                 document.getElementById('targetDecayTime').textContent =
                     data.decay_time_days.toFixed(1) + ' days after last irradiation';
+
+                // Populate isotope table
+                document.getElementById('targetIsotopeCount').textContent = data.number_of_isotopes;
+                const tbody = document.getElementById('targetIsotopesBody');
+                tbody.innerHTML = '';
+
+                // Sort isotopes by activity (descending), but keep stable isotopes at the end
+                const sortedIsotopes = Object.entries(data.isotopes || {})
+                    .sort((a, b) => {
+                        // Stable isotopes go last
+                        if (a[1].is_stable && !b[1].is_stable) return 1;
+                        if (!a[1].is_stable && b[1].is_stable) return -1;
+                        // Otherwise sort by activity
+                        return b[1].activity_bq - a[1].activity_bq;
+                    });
+
+                sortedIsotopes.forEach(([isotope, isoData]) => {
+                    const row = tbody.insertRow();
+                    const stableClass = isoData.is_stable ? 'table-secondary text-muted' : '';
+                    row.className = stableClass;
+
+                    const activityBqDisplay = isoData.is_stable ? '—' : formatScientific(isoData.activity_bq);
+                    const activityCiDisplay = isoData.is_stable ? '—' : formatScientific(isoData.activity_ci);
+
+                    // Format atoms count
+                    const atomsDisplay = formatScientific(isoData.atoms || 0);
+
+                    // Format mass with appropriate units
+                    let massDisplay;
+                    const mass_g = isoData.mass_g || 0;
+                    if (mass_g >= 1) {
+                        massDisplay = mass_g.toFixed(3) + ' g';
+                    } else if (mass_g >= 0.001) {
+                        massDisplay = (mass_g * 1000).toFixed(3) + ' mg';
+                    } else if (mass_g >= 0.000001) {
+                        massDisplay = (mass_g * 1e6).toFixed(3) + ' μg';
+                    } else if (mass_g >= 0.000000001) {
+                        massDisplay = (mass_g * 1e9).toFixed(3) + ' ng';
+                    } else if (mass_g > 0) {
+                        massDisplay = formatScientific(mass_g) + ' g';
+                    } else {
+                        massDisplay = '—';
+                    }
+
+                    row.innerHTML = `
+                        <td><strong>${isotope}</strong>${isoData.is_stable ? ' <span class="badge bg-secondary">Stable</span>' : ''}</td>
+                        <td>${activityBqDisplay}</td>
+                        <td>${activityCiDisplay}</td>
+                        <td>${atomsDisplay}</td>
+                        <td>${massDisplay}</td>
+                        <td>${isoData.half_life_display || 'Unknown'}</td>
+                    `;
+                });
 
                 resultDiv.style.display = 'block';
             } else {

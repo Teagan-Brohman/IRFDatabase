@@ -809,12 +809,20 @@ def _calculate_isotopes_from_inventory(inventory, reference_time):
 
         if not half_life_s or half_life_s <= 0:
             # Stable isotope - add to stable list
+            # Calculate mass: mass(g) = atoms × atomic_mass / Avogadro
+            try:
+                mass_number = int(isotope.split('-')[1])
+                mass_g = (n_atoms * mass_number) / 6.022e23
+            except (IndexError, ValueError):
+                mass_g = 0
+
             stable_isotope_data[isotope] = {
                 'activity_bq': 0.0,
                 'activity_ci': 0.0,
                 'half_life_s': None,  # Use None instead of float('inf') for JSON serialization
                 'half_life_display': 'stable',
                 'atoms': n_atoms,
+                'mass_g': mass_g,
                 'fraction': 0.0,
                 'is_stable': True
             }
@@ -850,12 +858,20 @@ def _calculate_isotopes_from_inventory(inventory, reference_time):
         else:
             half_life_display = f"{nanoseconds:.2f} ns"
 
+        # Calculate mass: mass(g) = atoms × atomic_mass / Avogadro
+        try:
+            mass_number = int(isotope.split('-')[1])
+            mass_g = (n_atoms * mass_number) / 6.022e23
+        except (IndexError, ValueError):
+            mass_g = 0
+
         isotope_data[isotope] = {
             'activity_bq': activity_bq,
             'activity_ci': _safe_float(activity_bq / 3.7e10),
             'half_life_s': half_life_s,
             'half_life_display': half_life_display,
             'atoms': n_atoms,
+            'mass_g': mass_g,
             'is_stable': False
         }
 
@@ -984,6 +1000,7 @@ def calculate_activity_at_date(request, pk):
     from .models import FluxConfiguration
     from .activation import ActivationCalculator
     from datetime import datetime
+    from django.utils import timezone
     import logging
 
     logger = logging.getLogger(__name__)
@@ -993,7 +1010,10 @@ def calculate_activity_at_date(request, pk):
 
         # Get target date from query parameter
         date_str = request.GET.get('date')
+        logger.info(f"Received date string: '{date_str}'")
+
         if not date_str:
+            logger.error("Missing date parameter")
             return JsonResponse({
                 'success': False,
                 'error': 'Missing required parameter: date'
@@ -1001,21 +1021,42 @@ def calculate_activity_at_date(request, pk):
 
         try:
             # Parse date - handle both date and datetime formats
+            logger.info(f"Parsing date string: '{date_str}'")
             if 'T' in date_str:
-                target_date = datetime.fromisoformat(date_str)
+                # Handle datetime formats with or without seconds
+                if date_str.count(':') == 1:
+                    # Format: YYYY-MM-DDTHH:MM (add seconds)
+                    logger.info(f"Adding seconds to date: {date_str}:00")
+                    target_date = datetime.fromisoformat(f"{date_str}:00")
+                else:
+                    # Format: YYYY-MM-DDTHH:MM:SS
+                    logger.info(f"Parsing full datetime: {date_str}")
+                    target_date = datetime.fromisoformat(date_str)
             else:
                 # If only date provided, assume end of day
+                logger.info(f"Date only, adding time: {date_str}T23:59:59")
                 target_date = datetime.fromisoformat(f"{date_str}T23:59:59")
+
+            logger.info(f"Parsed datetime: {target_date}, is_naive: {timezone.is_naive(target_date)}")
+
+            # Make timezone-aware if naive (Django uses timezone-aware datetimes)
+            # Use the server's default timezone to interpret the user's local time input
+            if timezone.is_naive(target_date):
+                target_date = timezone.make_aware(target_date, timezone=timezone.get_default_timezone())
+                logger.info(f"Made timezone-aware using default timezone: {target_date}")
         except ValueError as e:
+            logger.error(f"Date parsing error: {e}")
             return JsonResponse({
                 'success': False,
-                'error': f'Invalid date format: {date_str}. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)'
+                'error': f'Invalid date format: {date_str}. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS). Error: {str(e)}'
             }, status=400)
 
         # Get irradiation logs
         logs = sample.get_irradiation_logs().order_by('irradiation_date', 'time_in')
+        logger.info(f"Found {logs.count()} irradiation logs for sample {sample.sample_id}")
 
         if not logs.exists():
+            logger.error("No irradiation logs found")
             return JsonResponse({
                 'success': False,
                 'error': 'No irradiation history found for this sample.'
@@ -1026,7 +1067,10 @@ def calculate_activity_at_date(request, pk):
         for config in FluxConfiguration.objects.all():
             flux_configs[config.location] = config
 
+        logger.info(f"Found {len(flux_configs)} flux configurations")
+
         if not flux_configs:
+            logger.error("No flux configurations found")
             return JsonResponse({
                 'success': False,
                 'error': 'No flux configurations found. Please configure flux values in Admin.'
@@ -1035,6 +1079,8 @@ def calculate_activity_at_date(request, pk):
         # Get calculation parameters
         use_multigroup = request.GET.get('multigroup', 'true').lower() == 'true'
         min_fraction = float(request.GET.get('min_fraction', '0.001'))
+
+        logger.info(f"Calling decay_to_date with target_date={target_date}")
 
         # Initialize calculator
         calculator = ActivationCalculator(use_multigroup=use_multigroup)
@@ -1048,21 +1094,60 @@ def calculate_activity_at_date(request, pk):
             min_activity_fraction=min_fraction
         )
 
+        logger.info(f"decay_to_date returned success={results.get('success', False)}")
+
         if not results.get('success', False):
+            error_msg = results.get('error', 'Calculation failed')
+            logger.error(f"Calculation failed: {error_msg}")
             return JsonResponse({
                 'success': False,
-                'error': results.get('error', 'Calculation failed')
+                'error': error_msg
             }, status=400)
 
-        # Format isotopes data for JSON response
+        # Format isotopes data for JSON response (radioactive + stable)
         isotopes_data = {}
+
+        # Add radioactive isotopes
         for isotope, data in results.get('activities', {}).get('isotopes', {}).items():
+            atoms = data.get('atoms', 0)
+            # Calculate mass: mass(g) = atoms × atomic_mass / Avogadro
+            # Extract mass number from isotope name (e.g., "Au-198" -> 198)
+            try:
+                mass_number = int(isotope.split('-')[1])
+                mass_g = (atoms * mass_number) / 6.022e23
+            except (IndexError, ValueError):
+                mass_g = 0
+
             isotopes_data[isotope] = {
                 'activity_bq': data['activity_bq'],
                 'activity_mci': data['activity_bq'] / 3.7e10 * 1000,
                 'activity_ci': data['activity_bq'] / 3.7e10,
                 'half_life_seconds': data.get('half_life_seconds'),
                 'half_life_display': data.get('half_life_display', 'Unknown'),
+                'atoms': atoms,
+                'mass_g': mass_g,
+                'is_stable': False,
+            }
+
+        # Add stable isotopes
+        for isotope, data in results.get('activities', {}).get('stable_isotopes', {}).items():
+            atoms = data.get('atoms', 0)
+            # Calculate mass
+            try:
+                mass_number = int(isotope.split('-')[1])
+                mass_g = (atoms * mass_number) / 6.022e23
+            except (IndexError, ValueError):
+                mass_g = 0
+
+            isotopes_data[isotope] = {
+                'activity_bq': 0.0,
+                'activity_mci': 0.0,
+                'activity_ci': 0.0,
+                'half_life_seconds': None,
+                'half_life_display': 'Stable',
+                'atoms': atoms,
+                'mass_g': mass_g,
+                'is_stable': True,
             }
 
         response_data = {
@@ -1077,7 +1162,7 @@ def calculate_activity_at_date(request, pk):
             'total_activity_ci': results['total_activity_ci'],
             'estimated_dose_rate_1ft': results['estimated_dose_rate_1ft'],
             'isotopes': isotopes_data,
-            'number_of_isotopes': results['number_of_isotopes'],
+            'number_of_isotopes': len(isotopes_data),  # Total count including stable
         }
 
         return JsonResponse(response_data)
