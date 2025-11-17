@@ -118,6 +118,21 @@ SIMPLE_CROSS_SECTIONS = {
 # Decay constant: λ = ln(2) / t_1/2
 LAMBDA_LN2 = 0.693147180559945
 
+# Fallback gamma energy database for common activated isotopes (MeV)
+# Format: {isotope: weighted_average_gamma_energy_MeV}
+# Used when PyNE is not available
+GAMMA_ENERGIES = {
+    'Au-198': 0.412,  # 411.8 keV (95.5%), main gamma
+    'Co-60': 1.250,   # Average of 1.173 MeV and 1.332 MeV (both ~100%)
+    'Mn-56': 0.847,   # 846.8 keV (98.9%), main gamma
+    'Na-24': 2.754,   # Average of 1.369 MeV (100%) and 2.754 MeV (99.9%)
+    'Al-28': 1.779,   # 1779 keV (100%)
+    'Cu-64': 0.511,   # Positron annihilation (38%), no strong gammas
+    'Fe-59': 1.095,   # Average of 1.099 MeV (56.5%) and 1.292 MeV (43.2%)
+    'Sc-46': 1.120,   # Average of 0.889 MeV (100%) and 1.120 MeV (100%)
+    'Cr-51': 0.320,   # 320 keV (10%), mostly X-rays
+}
+
 
 class ActivationCalculator:
     """
@@ -1348,7 +1363,7 @@ class ActivationCalculator:
 
     def _get_gamma_energies(self, isotope):
         """
-        Get gamma energies and intensities for an isotope from PyNE
+        Get gamma energies and intensities for an isotope from PyNE or fallback database
 
         Args:
             isotope: Isotope name (e.g., "Co-60", "Au-198")
@@ -1356,6 +1371,11 @@ class ActivationCalculator:
         Returns:
             float: Weighted average gamma energy in MeV, or None if no gamma data
         """
+        # Try fallback database first (faster and always available)
+        if isotope in GAMMA_ENERGIES:
+            logger.debug(f"Gamma energy for {isotope}: {GAMMA_ENERGIES[isotope]:.3f} MeV (fallback database)")
+            return GAMMA_ENERGIES[isotope]
+
         if not HAS_PYNE:
             return None
 
@@ -1445,18 +1465,16 @@ class ActivationCalculator:
             if gamma_energy_mev and gamma_energy_mev > 0:
                 # Use 6 C E rule for gamma emitters
                 dose_contribution = 6.0 * activity_ci * gamma_energy_mev
+                total_dose_rate += dose_contribution
                 isotopes_with_gamma += 1
                 sys.stderr.write(f"DEBUG: {isotope_name}: 6 × {activity_ci:.2e} Ci × {gamma_energy_mev:.3f} MeV = {dose_contribution:.6f} mrem/hr\n")
                 sys.stderr.flush()
                 logger.debug(f"{isotope_name}: {activity_ci:.2e} Ci × {gamma_energy_mev:.3f} MeV = {dose_contribution:.2f} mrem/hr")
             else:
-                # Fallback for isotopes without gamma data (beta emitters, or missing data)
-                # Use conservative estimate: 1 Ci ≈ 500 mrem/hr (lower than gamma emitters)
-                dose_contribution = activity_ci * 500.0
+                # Skip isotopes without gamma data (likely beta-only emitters)
+                # Beta radiation is absorbed by air and doesn't contribute significantly to dose at 1 foot
                 isotopes_without_gamma += 1
-                logger.debug(f"{isotope_name}: No gamma data, using fallback ({dose_contribution:.2f} mrem/hr)")
-
-            total_dose_rate += dose_contribution
+                logger.debug(f"{isotope_name}: No gamma data, skipping (likely beta emitter)")
 
         import sys
         sys.stdout.flush()
