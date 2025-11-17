@@ -422,7 +422,7 @@
                                                             <th>Time In</th>
                                                             <th>Time Out</th>
                                                             <th>Total Time</th>
-                                                            <th>Dose Rate @ 1 ft (mR/hR)</th>
+                                                            <th>Dose Rate @ 1 ft (mRem/hr)</th>
                                                             <th>Decay Time</th>
                                                             <th>Initials</th>
                                                             <th>Actions</th>
@@ -431,7 +431,7 @@
                                                     <tbody>
                                                         {% for log in logs %}
                                                             <tr>
-                                                                <td><strong>{{ log.sample_id }}</strong></td>
+                                                                <td><strong>{{ log.get_sample_id }}</strong></td>
                                                                 <td>{{ log.experimenter_name }}</td>
                                                                 <td>{{ log.actual_location }}</td>
                                                                 <td>{{ log.actual_power }}</td>

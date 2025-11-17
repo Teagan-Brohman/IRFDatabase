@@ -12,13 +12,61 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'irfdb.settings')
 django.setup()
 
-from irradiation.models import IrradiationRequestForm, SampleIrradiationLog, Sample
+from irradiation.models import (
+    IrradiationRequestForm,
+    SampleIrradiationLog,
+    Sample,
+    SampleComposition,
+    FluxConfiguration
+)
 
 # Clear existing sample data
 print("Clearing existing sample data...")
 SampleIrradiationLog.objects.all().delete()
 Sample.objects.all().delete()
+SampleComposition.objects.all().delete()
 IrradiationRequestForm.objects.all().delete()
+
+# Create flux configurations if they don't exist
+print("Setting up flux configurations...")
+flux_configs = [
+    {
+        'location': 'bare_rabbit',
+        'reference_power': 200.0,
+        'thermal_flux': 2.5e12,  # 2.5 × 10^12 n/cm²/s
+        'fast_flux': 1.0e11,     # 1.0 × 10^11 n/cm²/s
+    },
+    {
+        'location': 'cad_rabbit',
+        'reference_power': 200.0,
+        'thermal_flux': 5.0e11,  # Lower thermal flux (cadmium absorbs thermal)
+        'fast_flux': 8.0e10,
+    },
+    {
+        'location': 'beam_port',
+        'reference_power': 200.0,
+        'thermal_flux': 1.0e12,
+        'fast_flux': 5.0e10,
+    },
+    {
+        'location': 'thermal_column',
+        'reference_power': 200.0,
+        'thermal_flux': 1.0e11,  # Very thermalized
+        'fast_flux': 1.0e9,      # Very low fast flux
+    },
+]
+
+for config in flux_configs:
+    FluxConfiguration.objects.update_or_create(
+        location=config['location'],
+        defaults={
+            'reference_power': config['reference_power'],
+            'thermal_flux': config['thermal_flux'],
+            'fast_flux': config['fast_flux'],
+        }
+    )
+    print(f"  - Configured flux for {config['location']}")
+print(f"✓ Created {FluxConfiguration.objects.count()} flux configurations")
 
 print("Creating sample IRFs and logs...")
 
@@ -62,6 +110,15 @@ sample1 = Sample.objects.create(
     mass=2.5,
     mass_unit='g',
 )
+# Add composition: 100% Au (natural abundance)
+SampleComposition.objects.create(
+    sample=sample1,
+    element='Au',
+    isotope='Au-197',  # Natural gold is 100% Au-197
+    fraction=100.0,
+    composition_type='wt',
+    order=1
+)
 
 sample2 = Sample.objects.create(
     sample_id='AU-002',
@@ -71,6 +128,15 @@ sample2 = Sample.objects.create(
     mass=2.5,
     mass_unit='g',
 )
+# Add composition: 100% Au (natural abundance)
+SampleComposition.objects.create(
+    sample=sample2,
+    element='Au',
+    isotope='Au-197',  # Natural gold is 100% Au-197
+    fraction=100.0,
+    composition_type='wt',
+    order=1
+)
 
 # Add sample logs for IRF 1
 log1 = SampleIrradiationLog.objects.create(
@@ -78,7 +144,7 @@ log1 = SampleIrradiationLog.objects.create(
     sample=sample1,
     irradiation_date=date(2024, 2, 1),
     experimenter_name='Dr. John Smith',
-    actual_location='Bare Rabbit',
+    actual_location='bare_rabbit',  # Must match FluxConfiguration location choices
     actual_power=200.00,
     time_in=time(10, 0),
     time_out=time(11, 0),
@@ -94,7 +160,7 @@ log2 = SampleIrradiationLog.objects.create(
     sample=sample2,
     irradiation_date=date(2024, 2, 8),
     experimenter_name='Dr. John Smith',
-    actual_location='Bare Rabbit',
+    actual_location='bare_rabbit',  # Must match FluxConfiguration location choices
     actual_power=200.00,
     time_in=time(14, 30),
     time_out=time(15, 30),
@@ -145,6 +211,27 @@ sample3 = Sample.objects.create(
     mass=8.0,
     mass_unit='g',
 )
+# Add typical soil composition (simplified for demonstration)
+# Using natural abundance (no specific isotope specified)
+compositions = [
+    ('Si', '', 45.0, 'wt', 1),   # Silicon oxide
+    ('Al', '', 15.0, 'wt', 2),   # Aluminum oxide
+    ('Fe', '', 10.0, 'wt', 3),   # Iron oxide
+    ('Ca', '', 8.0, 'wt', 4),    # Calcium
+    ('Na', '', 5.0, 'wt', 5),    # Sodium
+    ('Mg', '', 5.0, 'wt', 6),    # Magnesium
+    ('K', '', 4.0, 'wt', 7),     # Potassium
+    ('O', '', 8.0, 'wt', 8),     # Oxygen (remaining)
+]
+for element, isotope, fraction, comp_type, order in compositions:
+    SampleComposition.objects.create(
+        sample=sample3,
+        element=element,
+        isotope=isotope,
+        fraction=fraction,
+        composition_type=comp_type,
+        order=order
+    )
 
 # Add sample log for IRF 2
 log3 = SampleIrradiationLog.objects.create(
@@ -152,7 +239,7 @@ log3 = SampleIrradiationLog.objects.create(
     sample=sample3,
     irradiation_date=date(2024, 3, 15),
     experimenter_name='Dr. Sarah Williams',
-    actual_location='Cad Rabbit',
+    actual_location='cad_rabbit',  # Must match FluxConfiguration location choices
     actual_power=150.00,
     time_in=time(9, 0),
     time_out=time(11, 0),
@@ -209,13 +296,32 @@ sample4 = Sample.objects.create(
     mass=12.0,
     mass_unit='g',
 )
+# Add composition: Natural molybdenum (mixed isotopes)
+mo_compositions = [
+    ('Mo', 'Mo-92', 14.5, 'at', 1),
+    ('Mo', 'Mo-94', 9.2, 'at', 2),
+    ('Mo', 'Mo-95', 15.9, 'at', 3),
+    ('Mo', 'Mo-96', 16.7, 'at', 4),
+    ('Mo', 'Mo-97', 9.6, 'at', 5),
+    ('Mo', 'Mo-98', 24.4, 'at', 6),
+    ('Mo', 'Mo-100', 9.7, 'at', 7),
+]
+for element, isotope, fraction, comp_type, order in mo_compositions:
+    SampleComposition.objects.create(
+        sample=sample4,
+        element=element,
+        isotope=isotope,
+        fraction=fraction,
+        composition_type=comp_type,
+        order=order
+    )
 
 log4 = SampleIrradiationLog.objects.create(
     irf=irf3,
     sample=sample4,
     irradiation_date=date(2024, 4, 20),
     experimenter_name='Dr. Emily Thompson',
-    actual_location='Beam Port 1',
+    actual_location='beam_port',  # Must match FluxConfiguration location choices
     actual_power=250.00,
     time_in=time(8, 0),
     time_out=time(11, 0),
@@ -271,8 +377,10 @@ irf5 = IrradiationRequestForm.objects.create(
 print(f"Created IRF {irf5.irf_number}")
 
 print("\n✓ Sample data creation complete!")
+print(f"Created {FluxConfiguration.objects.count()} flux configurations")
 print(f"Created {IrradiationRequestForm.objects.count()} IRFs")
 print(f"Created {Sample.objects.count()} samples")
+print(f"Created {SampleComposition.objects.count()} sample composition entries")
 print(f"Created {SampleIrradiationLog.objects.count()} sample logs")
 print("\nLogin credentials:")
 print("  Username: admin")

@@ -980,14 +980,32 @@ class ActivationCalculator:
 
     def _decay_with_rd(self, inventory, time_s):
         """Decay using radioactivedecay library (includes decay chains)"""
-        # Convert inventory to radioactivedecay Inventory
-        # Format: {isotope: number_of_atoms}
-        rd_inventory = rd.Inventory(inventory, 'num')
+        # Separate radioactive and stable isotopes
+        # radioactivedecay only includes radioactive isotopes in its dataset
+        radioactive_inventory = {}
+        stable_inventory = {}
 
-        # Decay for time_s seconds
-        decayed = rd_inventory.decay(time_s, 's')
+        for isotope, n_atoms in inventory.items():
+            try:
+                # Try to create a tiny inventory to test if isotope is in dataset
+                test_inv = rd.Inventory({isotope: 1.0}, 'num')
+                # If successful, it's in the dataset (radioactive or very long-lived)
+                radioactive_inventory[isotope] = n_atoms
+            except Exception:
+                # Not in radioactivedecay dataset - treat as stable
+                stable_inventory[isotope] = n_atoms
 
-        return dict(decayed.numbers())
+        # Decay radioactive isotopes
+        decayed = {}
+        if radioactive_inventory:
+            rd_inventory = rd.Inventory(radioactive_inventory, 'num')
+            decayed_rd = rd_inventory.decay(time_s, 's')
+            decayed.update(dict(decayed_rd.numbers()))
+
+        # Stable isotopes don't decay
+        decayed.update(stable_inventory)
+
+        return decayed
 
     def _decay_simple(self, inventory, time_s):
         """Simple decay without chains"""
