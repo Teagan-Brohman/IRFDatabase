@@ -931,9 +931,7 @@ class ActivationResult(models.Model):
     )
 
     # Dose rate estimate (using 6CE rule or detailed calculation)
-    estimated_dose_rate_1ft = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
+    estimated_dose_rate_1ft = models.FloatField(
         null=True,
         blank=True,
         help_text="Estimated dose rate at 1 foot (mrem/hr)"
@@ -1045,9 +1043,7 @@ class ActivationTimeline(models.Model):
     )
 
     # Dose rate at this step
-    estimated_dose_rate_1ft = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
+    estimated_dose_rate_1ft = models.FloatField(
         null=True,
         blank=True,
         help_text="Estimated dose rate at 1 foot (mrem/hr)"

@@ -691,8 +691,10 @@ def calculate_sample_isotopics(request, pk):
             'total_activity_ci': results['total_activity_bq'] / 3.7e10,
             'reference_time': results['reference_time'],
             'isotopes': results['isotopes'],
+            'stable_isotopes': results.get('stable_isotopes', {}),
             'estimated_dose_rate_1ft': results.get('estimated_dose_rate_1ft'),
             'num_isotopes': len(results['isotopes']),
+            'num_stable_isotopes': len(results.get('stable_isotopes', {})),
             'from_cache': results.get('from_cache', False),
             'irradiation_count': logs.count(),
             'skipped_irradiations': skipped,
@@ -754,6 +756,121 @@ def _save_activation_result(sample, results, use_multigroup):
         logger.error(f"Failed to save activation result: {e}")
 
 
+def _calculate_isotopes_from_inventory(inventory, reference_time):
+    """
+    Convert isotopic inventory (atoms) to activities with metadata
+
+    Args:
+        inventory: Dict of {isotope: n_atoms}
+        reference_time: datetime for activity calculation
+
+    Returns:
+        Tuple of (radioactive_isotopes, stable_isotopes)
+        Each dict: {isotope: {activity_bq, activity_ci, half_life_s, half_life_display, fraction, atoms}}
+    """
+    import numpy as np
+    import math
+    from .activation import ActivationCalculator
+
+    if not inventory:
+        return {}, {}
+
+    def _safe_float(value):
+        """Convert to float and handle NaN/Infinity"""
+        try:
+            val = float(value)
+            if math.isnan(val) or math.isinf(val):
+                return 0.0
+            return val
+        except:
+            return 0.0
+
+    calculator = ActivationCalculator()
+
+    # Calculate activity for each isotope: A = λN = (ln(2)/t_½) × N
+    isotope_data = {}
+    stable_isotope_data = {}
+    total_activity_bq = 0
+
+    for isotope, n_atoms in inventory.items():
+        n_atoms = _safe_float(n_atoms)
+        if n_atoms <= 0:
+            continue
+
+        # Get half-life
+        try:
+            # Try to get from PyNE if available
+            from pyne import nucname, data as pyne_data
+            nucid = nucname.id(isotope)
+            half_life_s = _safe_float(pyne_data.half_life(nucid))
+        except:
+            # Fallback to stored data or skip
+            half_life_s = 0.0
+
+        if not half_life_s or half_life_s <= 0:
+            # Stable isotope - add to stable list
+            stable_isotope_data[isotope] = {
+                'activity_bq': 0.0,
+                'activity_ci': 0.0,
+                'half_life_s': None,  # Use None instead of float('inf') for JSON serialization
+                'half_life_display': 'stable',
+                'atoms': n_atoms,
+                'fraction': 0.0,
+                'is_stable': True
+            }
+            continue
+
+        # Calculate activity: A = (ln(2) / t_½) × N
+        decay_constant = np.log(2) / half_life_s
+        activity_bq = _safe_float(n_atoms * decay_constant)
+
+        # Format half-life for display
+        years = half_life_s / (365.25 * 24 * 3600)
+        days = half_life_s / 86400
+        hours = half_life_s / 3600
+        minutes = half_life_s / 60
+        milliseconds = half_life_s * 1000
+        microseconds = half_life_s * 1e6
+        nanoseconds = half_life_s * 1e9
+
+        if years > 1:
+            half_life_display = f"{years:.2f} years"
+        elif days > 1:
+            half_life_display = f"{days:.2f} days"
+        elif hours > 1:
+            half_life_display = f"{hours:.2f} hours"
+        elif minutes > 1:
+            half_life_display = f"{minutes:.2f} minutes"
+        elif half_life_s >= 1:
+            half_life_display = f"{half_life_s:.2f} seconds"
+        elif milliseconds >= 1:
+            half_life_display = f"{milliseconds:.2f} ms"
+        elif microseconds >= 1:
+            half_life_display = f"{microseconds:.2f} μs"
+        else:
+            half_life_display = f"{nanoseconds:.2f} ns"
+
+        isotope_data[isotope] = {
+            'activity_bq': activity_bq,
+            'activity_ci': _safe_float(activity_bq / 3.7e10),
+            'half_life_s': half_life_s,
+            'half_life_display': half_life_display,
+            'atoms': n_atoms,
+            'is_stable': False
+        }
+
+        total_activity_bq += activity_bq
+
+    # Calculate fractions
+    for isotope in isotope_data:
+        if total_activity_bq > 0:
+            isotope_data[isotope]['fraction'] = _safe_float(isotope_data[isotope]['activity_bq'] / total_activity_bq)
+        else:
+            isotope_data[isotope]['fraction'] = 0.0
+
+    return isotope_data, stable_isotope_data
+
+
 def get_sample_timeline(request, pk):
     """
     Get timeline data for a sample showing activity at each step
@@ -783,11 +900,11 @@ def get_sample_timeline(request, pk):
     try:
         sample = get_object_or_404(Sample, pk=pk)
 
-        # Get the most recent activation result for this sample
+        # Get the most recent activation result for this sample (by calculation time, not irradiation time)
         activation_result = ActivationResult.objects.filter(
             sample=sample,
             calculation_successful=True
-        ).order_by('-reference_time').first()
+        ).order_by('-calculated_at').first()
 
         if not activation_result:
             return JsonResponse({
@@ -807,6 +924,9 @@ def get_sample_timeline(request, pk):
         # Format timeline data for JSON response
         timeline_data = []
         for entry in timeline_entries:
+            # Calculate full isotope breakdown from stored inventory
+            isotopes, stable_isotopes = _calculate_isotopes_from_inventory(entry.inventory or {}, entry.step_datetime)
+
             timeline_data.append({
                 'step_number': entry.step_number,
                 'step_type': entry.step_type,
@@ -817,6 +937,10 @@ def get_sample_timeline(request, pk):
                 'total_activity_ci': entry.get_activity_ci(),
                 'estimated_dose_rate_1ft': float(entry.estimated_dose_rate_1ft) if entry.estimated_dose_rate_1ft else None,
                 'dominant_isotopes': entry.dominant_isotopes or {},
+                'isotopes': isotopes,  # Full radioactive isotope breakdown
+                'stable_isotopes': stable_isotopes,  # Full stable isotope breakdown
+                'isotope_count': len(isotopes),  # Number of radioactive isotopes
+                'stable_isotope_count': len(stable_isotopes),  # Number of stable isotopes
                 'decay_time_display': entry.get_decay_time_display() if entry.decay_time_seconds else None,
                 'decay_time_days': entry.decay_time_seconds / 86400 if entry.decay_time_seconds else None,
             })

@@ -270,9 +270,12 @@
                             <div class="col-md-4">
                                 <div class="card bg-light">
                                     <div class="card-body text-center">
-                                        <h6 class="text-muted mb-2">Dose Rate (1 ft)</h6>
+                                        <h6 class="text-muted mb-2">Current Dose Rate (1 ft)</h6>
                                         <h3 class="mb-0" id="doseRate">-</h3>
                                         <small class="text-muted">mrem/hr</small>
+                                        <div id="decayTimeInfo" class="text-muted mt-1" style="font-size: 0.85em; display: none;">
+                                            <i class="bi bi-clock"></i> <span id="decayDays">-</span> days after irradiation
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -301,7 +304,15 @@
                         </div>
 
                         <!-- Isotope Table -->
-                        <h5 class="mt-4">Isotopic Inventory</h5>
+                        <div class="d-flex justify-content-between align-items-center mt-4 mb-2">
+                            <h5 class="mb-0">Isotopic Inventory</h5>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="showStableIsotopes" checked>
+                                <label class="form-check-label" for="showStableIsotopes">
+                                    Include stable isotopes
+                                </label>
+                            </div>
+                        </div>
                         <div class="table-responsive">
                             <table class="table table-striped">
                                 <thead>
@@ -309,7 +320,7 @@
                                         <th>Isotope</th>
                                         <th>Activity</th>
                                         <th>Half-Life</th>
-                                        <th>% of Total</th>
+                                        <th>% of Total Activity</th>
                                         <th>Atoms</th>
                                     </tr>
                                 </thead>
@@ -408,12 +419,13 @@
                                                     <table class="table table-sm table-hover">
                                                         <thead>
                                                             <tr>
-                                                                <th>Step</th>
-                                                                <th>Type</th>
-                                                                <th>Date/Time</th>
-                                                                <th>Activity</th>
-                                                                <th>Dose Rate (1 ft)</th>
-                                                                <th>Description</th>
+                                                                <th style="width: 5%;">Step</th>
+                                                                <th style="width: 12%;">Type</th>
+                                                                <th style="width: 18%;">Date/Time</th>
+                                                                <th style="width: 15%;">Activity</th>
+                                                                <th style="width: 13%;">Dose Rate (1 ft)</th>
+                                                                <th style="width: 12%;">Isotopes</th>
+                                                                <th style="width: 25%;">Description</th>
                                                             </tr>
                                                         </thead>
                                                         <tbody id="timelineTableBody">
@@ -441,6 +453,7 @@
 let currentResults = null;
 let currentActivityUnit = 'bq';
 let currentYAxisScale = 'log';
+let showStableIsotopes = true;
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
@@ -468,6 +481,29 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
+
+    // Stable isotopes toggle
+    const stableToggle = document.getElementById('showStableIsotopes');
+    if (stableToggle) {
+        stableToggle.addEventListener('change', function() {
+            showStableIsotopes = this.checked;
+            if (currentResults) {
+                // Update main table
+                updateIsotopeTable(currentResults.isotopes, currentResults.stable_isotopes || {});
+
+                // Update isotope count
+                const radioactiveCount = Object.keys(currentResults.isotopes || {}).length;
+                const stableCount = Object.keys(currentResults.stable_isotopes || {}).length;
+                const totalCount = showStableIsotopes ? radioactiveCount + stableCount : radioactiveCount;
+                document.getElementById('isotopeCount').textContent = totalCount;
+
+                // Reload timeline if it's been loaded
+                if (timelineLoaded) {
+                    loadTimeline();
+                }
+            }
+        });
+    }
 });
 
 function calculateIsotopics() {
@@ -545,45 +581,88 @@ function updateDisplay(data) {
     const activityUnit = currentActivityUnit === 'bq' ? 'Bq' : 'Ci';
 
     document.getElementById('totalActivity').textContent = formatScientific(activity) + ' ' + activityUnit;
-    document.getElementById('doseRate').textContent = (data.estimated_dose_rate_1ft || 0).toFixed(2);
-    document.getElementById('isotopeCount').textContent = Object.keys(data.isotopes).length;
 
-    // Update isotope table
-    updateIsotopeTable(data.isotopes);
+    // Display dose rate in scientific notation if very small
+    const doseRate = data.estimated_dose_rate_1ft || 0;
+    if (doseRate < 0.01 && doseRate > 0) {
+        document.getElementById('doseRate').textContent = formatScientific(doseRate);
+    } else {
+        document.getElementById('doseRate').textContent = doseRate.toFixed(2);
+    }
+
+    // Calculate total isotope count including stable if toggle is on
+    const radioactiveCount = Object.keys(data.isotopes).length;
+    const stableCount = Object.keys(data.stable_isotopes || {}).length;
+    const totalCount = showStableIsotopes ? radioactiveCount + stableCount : radioactiveCount;
+    document.getElementById('isotopeCount').textContent = totalCount;
+
+    // Update decay time info if available
+    if (data.decay_time_days !== undefined && data.decay_time_days > 0) {
+        document.getElementById('decayDays').textContent = data.decay_time_days.toFixed(1);
+        document.getElementById('decayTimeInfo').style.display = 'block';
+    } else {
+        document.getElementById('decayTimeInfo').style.display = 'none';
+    }
+
+    // Update isotope table (including stable isotopes if toggle is on)
+    updateIsotopeTable(data.isotopes, data.stable_isotopes || {});
 
     // Update graph
     updateActivityGraph(data.isotopes);
 }
 
-function updateIsotopeTable(isotopes) {
+function updateIsotopeTable(isotopes, stableIsotopes = {}) {
     const tbody = document.getElementById('isotopeTableBody');
     tbody.innerHTML = '';
 
-    // Sort isotopes by activity (descending)
-    const sortedIsotopes = Object.entries(isotopes).sort((a, b) => {
-        return b[1].activity_bq - a[1].activity_bq;
+    // Combine radioactive and stable isotopes if toggle is on
+    let allIsotopes = [];
+
+    // Add radioactive isotopes
+    Object.entries(isotopes).forEach(([isotope, data]) => {
+        allIsotopes.push([isotope, data, false]); // false = not stable
     });
 
-    sortedIsotopes.forEach(([isotope, data]) => {
-        const row = document.createElement('tr');
+    // Add stable isotopes if toggle is on
+    if (showStableIsotopes) {
+        Object.entries(stableIsotopes).forEach(([isotope, data]) => {
+            allIsotopes.push([isotope, data, true]); // true = stable
+        });
+    }
 
-        const activity = currentActivityUnit === 'bq' ? data.activity_bq : data.activity_ci;
+    // Sort by activity (descending), stable isotopes at the end (activity = 0)
+    allIsotopes.sort((a, b) => {
+        return (b[1].activity_bq || 0) - (a[1].activity_bq || 0);
+    });
+
+    allIsotopes.forEach(([isotope, data, isStable]) => {
+        const row = document.createElement('tr');
+        if (isStable) {
+            row.classList.add('table-secondary'); // Gray background for stable isotopes
+        }
+
+        const activity = currentActivityUnit === 'bq' ? (data.activity_bq || 0) : (data.activity_ci || 0);
         const activityUnit = currentActivityUnit === 'bq' ? 'Bq' : 'Ci';
-        const fraction = (data.fraction * 100).toFixed(2);
+        const fraction = ((data.fraction || 0) * 100).toFixed(2);
 
         row.innerHTML = `
-            <td><strong>${isotope}</strong></td>
-            <td>${formatScientific(activity)} ${activityUnit}</td>
-            <td>${formatHalfLife(data.half_life_seconds)}</td>
             <td>
+                <strong>${isotope}</strong>
+                ${isStable ? '<span class="badge bg-secondary ms-2" style="font-size: 0.7em;">stable</span>' : ''}
+            </td>
+            <td style="white-space: nowrap;">${isStable ? 'N/A' : formatScientific(activity) + ' ' + activityUnit}</td>
+            <td>${isStable ? 'stable' : formatHalfLife(data.half_life_s || data.half_life_seconds)}</td>
+            <td>
+                ${isStable ? '<span class="text-muted">N/A</span>' : `
                 <div class="progress" style="min-width: 100px;">
                     <div class="progress-bar" role="progressbar"
                          style="width: ${Math.min(fraction, 100)}%">
                         ${fraction}%
                     </div>
                 </div>
+                `}
             </td>
-            <td>${formatScientific(data.atom_count)}</td>
+            <td style="white-space: nowrap; min-width: 120px;">${formatScientific(data.atoms)}</td>
         `;
 
         tbody.appendChild(row);
@@ -647,6 +726,7 @@ function showError(message) {
 }
 
 function formatScientific(value) {
+    if (value === null || value === undefined || isNaN(value)) return 'N/A';
     if (value === 0) return '0';
     const exp = Math.floor(Math.log10(Math.abs(value)));
     const mantissa = value / Math.pow(10, exp);
@@ -660,12 +740,18 @@ function formatHalfLife(seconds) {
     const days = seconds / 86400;
     const hours = seconds / 3600;
     const minutes = seconds / 60;
+    const milliseconds = seconds * 1000;
+    const microseconds = seconds * 1e6;
+    const nanoseconds = seconds * 1e9;
 
     if (years > 1) return years.toFixed(2) + ' years';
     if (days > 1) return days.toFixed(2) + ' days';
     if (hours > 1) return hours.toFixed(2) + ' hours';
     if (minutes > 1) return minutes.toFixed(2) + ' minutes';
-    return seconds.toFixed(2) + ' seconds';
+    if (seconds >= 1) return seconds.toFixed(2) + ' seconds';
+    if (milliseconds >= 1) return milliseconds.toFixed(2) + ' ms';
+    if (microseconds >= 1) return microseconds.toFixed(2) + ' μs';
+    return nanoseconds.toFixed(2) + ' ns';
 }
 
 // ============================================================================
@@ -733,8 +819,10 @@ function displayTimeline(timeline) {
     const tbody = document.getElementById('timelineTableBody');
     tbody.innerHTML = '';
 
-    timeline.forEach(entry => {
+    timeline.forEach((entry, index) => {
         const row = document.createElement('tr');
+        row.style.cursor = 'pointer';
+        row.dataset.stepIndex = index;
 
         const activity = currentActivityUnit === 'bq' ? entry.total_activity_bq : entry.total_activity_ci;
         const activityUnit = currentActivityUnit === 'bq' ? 'Bq' : 'Ci';
@@ -757,19 +845,130 @@ function displayTimeline(timeline) {
             minute: '2-digit'
         });
 
+        // Isotope button - include stable isotopes if toggle is on
+        const radioactiveIsotopeCount = entry.isotope_count || 0;
+        const stableIsotopeCount = entry.stable_isotope_count || 0;
+        const totalIsotopeCount = radioactiveIsotopeCount + (showStableIsotopes ? stableIsotopeCount : 0);
+        const isotopeBtn = totalIsotopeCount > 0
+            ? `<button class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation(); toggleIsotopeDetails(${index});">
+                <i class="bi bi-chevron-down" id="chevron-${index}"></i> ${totalIsotopeCount}
+               </button>`
+            : '<span class="text-muted">None</span>';
+
         row.innerHTML = `
             <td>${entry.step_number}</td>
             <td><span class="badge bg-${stepBadgeClass}">${entry.step_type}</span></td>
             <td>${dateStr}</td>
             <td>${formatScientific(activity)} ${activityUnit}</td>
-            <td>${(entry.estimated_dose_rate_1ft || 0).toFixed(2)} mrem/hr</td>
+            <td>${formatScientific(entry.estimated_dose_rate_1ft || 0)} mrem/hr</td>
+            <td>${isotopeBtn}</td>
             <td>${entry.description}</td>
         `;
 
         tbody.appendChild(row);
+
+        // Add hidden detail row for isotope breakdown
+        if (totalIsotopeCount > 0) {
+            const detailRow = document.createElement('tr');
+            detailRow.id = `isotope-detail-${index}`;
+            detailRow.style.display = 'none';
+            detailRow.classList.add('table-light');
+
+            detailRow.innerHTML = `
+                <td colspan="7">
+                    <div class="p-3">
+                        <h6>Isotopic Breakdown at Step ${entry.step_number}</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Isotope</th>
+                                        <th>Activity</th>
+                                        <th>Half-Life</th>
+                                        <th>% of Total Activity</th>
+                                        <th>Atoms</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="isotope-tbody-${index}">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </td>
+            `;
+
+            tbody.appendChild(detailRow);
+
+            // Populate isotope data (radioactive + stable if toggle is on)
+            const isotopeTbody = detailRow.querySelector(`#isotope-tbody-${index}`);
+
+            let allTimelineIsotopes = [];
+
+            // Add radioactive isotopes
+            Object.entries(entry.isotopes || {}).forEach(([isotope, data]) => {
+                allTimelineIsotopes.push([isotope, data, false]);
+            });
+
+            // Add stable isotopes if toggle is on
+            if (showStableIsotopes && entry.stable_isotopes) {
+                Object.entries(entry.stable_isotopes).forEach(([isotope, data]) => {
+                    allTimelineIsotopes.push([isotope, data, true]);
+                });
+            }
+
+            // Sort by activity (descending)
+            allTimelineIsotopes.sort((a, b) => (b[1].activity_bq || 0) - (a[1].activity_bq || 0));
+
+            allTimelineIsotopes.forEach(([isotope, data, isStable]) => {
+                const isoActivity = currentActivityUnit === 'bq' ? (data.activity_bq || 0) : (data.activity_ci || 0);
+                const isoUnit = currentActivityUnit === 'bq' ? 'Bq' : 'Ci';
+                const fraction = ((data.fraction || 0) * 100).toFixed(2);
+
+                const isoRow = document.createElement('tr');
+                if (isStable) {
+                    isoRow.classList.add('table-secondary');
+                }
+
+                isoRow.innerHTML = `
+                    <td>
+                        <strong>${isotope}</strong>
+                        ${isStable ? '<span class="badge bg-secondary ms-2" style="font-size: 0.7em;">stable</span>' : ''}
+                    </td>
+                    <td style="white-space: nowrap;">${isStable ? 'N/A' : formatScientific(isoActivity) + ' ' + isoUnit}</td>
+                    <td>${isStable ? 'stable' : (data.half_life_display || 'Unknown')}</td>
+                    <td>
+                        ${isStable ? '<span class="text-muted">N/A</span>' : `
+                        <div class="progress" style="min-width: 60px; height: 20px;">
+                            <div class="progress-bar bg-primary" role="progressbar"
+                                 style="width: ${Math.min(fraction, 100)}%">
+                                ${fraction}%
+                            </div>
+                        </div>
+                        `}
+                    </td>
+                    <td style="white-space: nowrap; min-width: 120px;">${formatScientific(data.atoms)}</td>
+                `;
+                isotopeTbody.appendChild(isoRow);
+            });
+        }
     });
 
     document.getElementById('timelineContent').style.display = 'block';
+}
+
+function toggleIsotopeDetails(index) {
+    const detailRow = document.getElementById(`isotope-detail-${index}`);
+    const chevron = document.getElementById(`chevron-${index}`);
+
+    if (detailRow.style.display === 'none') {
+        detailRow.style.display = 'table-row';
+        chevron.classList.remove('bi-chevron-down');
+        chevron.classList.add('bi-chevron-up');
+    } else {
+        detailRow.style.display = 'none';
+        chevron.classList.remove('bi-chevron-up');
+        chevron.classList.add('bi-chevron-down');
+    }
 }
 
 function showTimelineError(message) {

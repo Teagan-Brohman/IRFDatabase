@@ -49,6 +49,7 @@ ENDF Data (Optional):
 import hashlib
 import json
 from datetime import datetime, timedelta
+from django.utils import timezone
 from decimal import Decimal
 import logging
 
@@ -152,8 +153,8 @@ class ActivationCalculator:
             dict with calculation results or None if calculation fails
         """
         try:
-            # Generate hash of irradiation history
-            irr_hash = self.generate_irradiation_hash(irradiation_logs)
+            # Generate hash of irradiation history AND sample composition
+            irr_hash = self.generate_irradiation_hash(irradiation_logs, sample=sample)
 
             # Check for cached results if requested
             if use_cache:
@@ -176,10 +177,10 @@ class ActivationCalculator:
 
             # Save initial state if tracking timeline
             if track_timeline and len(irradiation_logs) > 0:
-                first_irr_date = datetime.combine(
+                first_irr_date = timezone.make_aware(datetime.combine(
                     irradiation_logs[0].irradiation_date,
                     irradiation_logs[0].time_in
-                ) - timedelta(days=1)
+                )) - timedelta(days=1)
 
                 timeline.append({
                     'step_number': step_number,
@@ -228,7 +229,7 @@ class ActivationCalculator:
 
                 # Track decay period if there was a previous irradiation
                 if track_timeline and reference_time:
-                    irr_start = datetime.combine(log.irradiation_date, log.time_in)
+                    irr_start = timezone.make_aware(datetime.combine(log.irradiation_date, log.time_in))
                     decay_time_s = (irr_start - reference_time).total_seconds()
 
                     if decay_time_s > 0:
@@ -279,7 +280,7 @@ class ActivationCalculator:
 
             # Decay to current date if tracking timeline
             if track_timeline and reference_time:
-                current_date = datetime.now()
+                current_date = timezone.now()
                 if current_date > reference_time:
                     decay_to_current_s = (current_date - reference_time).total_seconds()
 
@@ -297,19 +298,42 @@ class ActivationCalculator:
                         'decay_time_seconds': int(decay_to_current_s)
                     })
 
-            # Convert inventory to activities at reference time
-            results = self._calculate_activities(inventory, reference_time, min_activity_fraction)
+            # Decay inventory to current date for main results display
+            current_date = timezone.now()
+            end_of_irradiation_time = reference_time
 
-            # Calculate total activity and dose rate
-            total_activity_bq = sum(iso['activity_bq'] for iso in results['isotopes'].values())
+            if current_date > reference_time:
+                # Calculate decay time from end of last irradiation to now
+                decay_to_current_s = (current_date - reference_time).total_seconds()
+
+                # Decay inventory to current date
+                current_inventory = self._decay_inventory(inventory.copy(), decay_to_current_s)
+
+                # Calculate activities at current date
+                results = self._calculate_activities(current_inventory, current_date, min_activity_fraction)
+
+                # Store both reference times
+                results['reference_time'] = current_date.isoformat()
+                results['end_of_irradiation_time'] = end_of_irradiation_time.isoformat()
+                results['decay_time_days'] = decay_to_current_s / 86400.0
+
+                logger.info(f"Decayed {decay_to_current_s/86400:.1f} days from end of irradiation to current date")
+            else:
+                # Current date is before or at reference time (shouldn't happen, but handle gracefully)
+                results = self._calculate_activities(inventory, reference_time, min_activity_fraction)
+                results['reference_time'] = reference_time.isoformat()
+                results['end_of_irradiation_time'] = end_of_irradiation_time.isoformat()
+                results['decay_time_days'] = 0.0
+
+            # Calculate total activity and dose rate at current date
+            total_activity_bq = results.get('total_activity_bq', 0.0)
             results['total_activity_bq'] = total_activity_bq
-            results['reference_time'] = reference_time.isoformat()
             results['irradiation_hash'] = irr_hash
             results['calculation_successful'] = True
             results['skipped_irradiations'] = skipped_irradiations  # Include skipped irradiations
             results['timeline'] = timeline if track_timeline else None  # Include timeline
 
-            # Estimate dose rate (simplified - can be improved)
+            # Estimate dose rate using isotope-specific gamma energies
             results['estimated_dose_rate_1ft'] = self._estimate_dose_rate(results['isotopes'])
 
             return results
@@ -324,18 +348,43 @@ class ActivationCalculator:
                 'irradiation_hash': '',
             }
 
-    def generate_irradiation_hash(self, irradiation_logs):
+    def generate_irradiation_hash(self, irradiation_logs, sample=None):
         """
-        Generate SHA256 hash of irradiation history to detect changes
+        Generate SHA256 hash of irradiation history AND sample composition to detect changes
 
         Args:
             irradiation_logs: QuerySet of SampleIrradiationLog
+            sample: Sample instance (optional, to include composition in hash)
 
         Returns:
             str: SHA256 hash hex string
         """
         # Create string representation of all relevant irradiation parameters
         hash_data = []
+
+        # Version number - increment when calculation logic changes to invalidate cache
+        # v3: Fixed PyNE gamma energy lookup to handle list-of-tuples format
+        hash_data.append("VERSION:3")
+
+        # Include sample composition if provided
+        if sample:
+            composition = self._get_sample_composition(sample)
+            comp_strings = []
+            for element, data in sorted(composition.items()):
+                if isinstance(data, dict):
+                    # Isotopic composition
+                    for isotope, fraction in sorted(data.items()):
+                        comp_strings.append(f"{isotope}:{fraction}")
+                else:
+                    # Elemental composition
+                    comp_strings.append(f"{element}:{data}")
+            hash_data.append(f"COMPOSITION:{','.join(comp_strings)}")
+
+            # Include sample mass
+            if sample.mass:
+                hash_data.append(f"MASS:{sample.mass}|{sample.mass_unit}")
+
+        # Include irradiation parameters
         for log in irradiation_logs:
             hash_data.append(f"{log.pk}|{log.actual_location}|{log.actual_power}|"
                            f"{log.total_time}|{log.irradiation_date}|{log.time_in}|{log.time_out}")
@@ -377,7 +426,7 @@ class ActivationCalculator:
             )
 
             # Calculate total activity
-            total_activity = sum(iso['activity_bq'] for iso in activities['isotopes'].values())
+            total_activity = activities.get('total_activity_bq', 0.0)
 
             # Get top 5 dominant isotopes
             dominant = {}
@@ -536,7 +585,7 @@ class ActivationCalculator:
             min_activity_fraction
         )
 
-        total_activity_bq = sum(iso['activity_bq'] for iso in activities['isotopes'].values())
+        total_activity_bq = activities.get('total_activity_bq', 0.0)
 
         # Estimate dose rate
         dose_rate = self._estimate_dose_rate(activities['isotopes'])
@@ -639,46 +688,80 @@ class ActivationCalculator:
                 if element not in composition:
                     composition[element] = {}
 
-                # Convert wt% to at% if needed (simplified - assumes single isotope)
-                if comp.isotope:
-                    # Format as "Element-Mass" (e.g., "Au-197")
-                    isotope = f"{element}-{comp.isotope}"
-                else:
-                    # Use most abundant isotope
-                    isotope = self._get_natural_isotope(element)
+                element_fraction = float(comp.fraction) / 100.0  # Element's fraction in sample
 
-                composition[element][isotope] = float(comp.fraction) / 100.0
+                # Convert wt% to at% if needed (simplified - assumes single isotope)
+                if comp.isotope and comp.isotope.lower() not in ['natural', 'nat', '']:
+                    # Specific isotope specified
+                    # Format as "Element-Mass" (e.g., "Au-197")
+                    # Remove element prefix if it's duplicated (e.g., "U-235" not "U-U-235")
+                    isotope_part = comp.isotope.replace(f"{element}-", "").strip()
+                    isotope = f"{element}-{isotope_part}"
+                    composition[element][isotope] = element_fraction
+                else:
+                    # Natural abundance - get all isotopes
+                    natural_isotopes = self._get_natural_isotopes(element)
+                    for isotope, abundance in natural_isotopes.items():
+                        # Each isotope gets element_fraction * its natural abundance
+                        composition[element][isotope] = element_fraction * abundance
 
         elif sample.material_type:
             # Infer composition from material_type
             # Try to parse as element symbol
             element = sample.material_type.strip().capitalize()
 
-            # Check if it's in our database
-            if element in SIMPLE_CROSS_SECTIONS:
-                composition[element] = {}
-                # Add all natural isotopes with their abundances
-                for isotope, data in SIMPLE_CROSS_SECTIONS[element].items():
-                    abundance = data[0] / 100.0  # Convert % to fraction
-                    composition[element][isotope] = abundance
-            else:
-                logger.warning(f"Unknown element: {element}")
+            # Use natural isotopes for this element
+            composition[element] = self._get_natural_isotopes(element)
 
         return composition
 
-    def _get_natural_isotope(self, element):
-        """Get the most abundant natural isotope for an element"""
+    def _get_natural_isotopes(self, element):
+        """Get all natural isotopes for an element with their abundances
+
+        Returns a dict of {isotope: fraction} for all natural isotopes
+        """
+        # First try PyNE if available
+        if HAS_PYNE:
+            try:
+                from pyne import data as pyne_data, nucname
+
+                # Get atomic number for element
+                z_num = nucname.znum(element.upper())
+
+                # Common mass numbers for each element (we check these)
+                # This is a simple approach - could be improved by checking a wider range
+                mass_range = range(max(1, z_num * 2 - 20), z_num * 3 + 20)
+
+                natural_isotopes = {}
+                for mass_num in mass_range:
+                    try:
+                        nuc_id = nucname.id(f"{element}-{mass_num}")
+                        abundance = pyne_data.natural_abund(nuc_id)
+                        if abundance > 1e-10:  # Only include isotopes with measurable abundance
+                            isotope_name = f"{element}-{mass_num}"
+                            natural_isotopes[isotope_name] = abundance
+                    except:
+                        continue
+
+                # Return all natural isotopes with their abundances
+                if natural_isotopes:
+                    return natural_isotopes
+
+            except Exception as e:
+                logger.debug(f"PyNE lookup failed for {element}: {e}")
+
+        # Fallback to SIMPLE_CROSS_SECTIONS database
         if element in SIMPLE_CROSS_SECTIONS:
             isotopes = SIMPLE_CROSS_SECTIONS[element]
-            # Find isotope with highest abundance
-            max_abundance = 0
-            main_isotope = None
+            # Return all isotopes with their abundances (convert % to fraction)
+            natural_isotopes = {}
             for isotope, data in isotopes.items():
-                if data[0] > max_abundance:
-                    max_abundance = data[0]
-                    main_isotope = isotope
-            return main_isotope
-        return f"{element}-Unknown"
+                abundance_percent = data[0]  # First element is abundance percentage
+                natural_isotopes[isotope] = abundance_percent / 100.0
+            return natural_isotopes
+
+        # Return unknown isotope as fallback
+        return {f"{element}-Unknown": 1.0}
 
     def _initialize_inventory(self, composition, sample):
         """
@@ -764,9 +847,9 @@ class ActivationCalculator:
         # Calculate irradiation time in seconds
         total_time_s = self._convert_to_seconds(float(log.total_time), log.total_time_unit)
 
-        # Calculate irradiation start/end times
-        irr_datetime = datetime.combine(log.irradiation_date, log.time_in)
-        irr_end_datetime = datetime.combine(log.irradiation_date, log.time_out)
+        # Calculate irradiation start/end times (make timezone-aware)
+        irr_datetime = timezone.make_aware(datetime.combine(log.irradiation_date, log.time_in))
+        irr_end_datetime = timezone.make_aware(datetime.combine(log.irradiation_date, log.time_out))
 
         # If there was a previous irradiation, decay the inventory first
         if previous_time:
@@ -921,9 +1004,10 @@ class ActivationCalculator:
             min_fraction: minimum activity fraction to include
 
         Returns:
-            dict: {isotope: {activity_bq, half_life, etc.}}
+            dict: {isotopes: {...}, stable_isotopes: {...}}
         """
         activities = {}
+        stable_isotopes = {}
         total_activity = 0.0
 
         # Calculate activity for each isotope
@@ -934,8 +1018,18 @@ class ActivationCalculator:
             # Get half-life for this isotope (not cross-section - it might be a product!)
             half_life_s = self._get_half_life(isotope)
 
+            # Track stable isotopes separately
             if half_life_s is None or half_life_s == 'stable' or half_life_s == 0:
-                continue  # Skip stable isotopes or unknown isotopes
+                stable_isotopes[isotope] = {
+                    'activity_bq': 0.0,
+                    'activity_ci': 0.0,
+                    'atoms': n_atoms,
+                    'half_life_s': None,  # Use None instead of float('inf') for JSON serialization
+                    'half_life_display': 'stable',
+                    'fraction': 0.0,
+                    'is_stable': True
+                }
+                continue
 
             # Activity = λ * N
             decay_const = LAMBDA_LN2 / half_life_s
@@ -948,10 +1042,11 @@ class ActivationCalculator:
                     'atoms': n_atoms,
                     'half_life_s': half_life_s,
                     'half_life_display': self._format_half_life(half_life_s),
+                    'is_stable': False
                 }
                 total_activity += activity_bq
 
-        # Filter by minimum fraction
+        # Filter radioactive isotopes by minimum fraction
         filtered = {}
         for isotope, data in activities.items():
             fraction = data['activity_bq'] / total_activity if total_activity > 0 else 0
@@ -959,7 +1054,11 @@ class ActivationCalculator:
                 data['fraction'] = fraction
                 filtered[isotope] = data
 
-        return {'isotopes': filtered}
+        return {
+            'isotopes': filtered,
+            'stable_isotopes': stable_isotopes,
+            'total_activity_bq': total_activity  # Return the true total before filtering
+        }
 
     def _get_half_life(self, isotope):
         """
@@ -1247,14 +1346,74 @@ class ActivationCalculator:
             logger.debug(traceback.format_exc())
             return None
 
+    def _get_gamma_energies(self, isotope):
+        """
+        Get gamma energies and intensities for an isotope from PyNE
+
+        Args:
+            isotope: Isotope name (e.g., "Co-60", "Au-198")
+
+        Returns:
+            float: Weighted average gamma energy in MeV, or None if no gamma data
+        """
+        if not HAS_PYNE:
+            return None
+
+        try:
+            from pyne import data as pyne_data, nucname
+
+            # Convert isotope name to PyNE nucid
+            nuc_id = nucname.id(isotope)
+
+            # Get gamma energies and intensities
+            # PyNE returns lists of tuples: [(value, uncertainty), ...]
+            try:
+                # Try to get gamma ray data from PyNE
+                intensities = pyne_data.gamma_photon_intensity(nuc_id)
+                energies = pyne_data.gamma_energy(nuc_id)
+
+                if intensities and energies and len(intensities) > 0 and len(energies) > 0:
+                    # Calculate weighted average energy
+                    # intensities is [(intensity, uncertainty), ...]
+                    # energies is [(energy_keV, uncertainty), ...]
+                    total_intensity = sum(inten[0] for inten in intensities)
+                    if total_intensity > 0 and len(intensities) == len(energies):
+                        # Weighted average: Σ(E_i × I_i) / Σ(I_i)
+                        weighted_energy_kev = sum(energies[i][0] * intensities[i][0]
+                                                 for i in range(len(energies))) / total_intensity
+                        # Convert from keV to MeV
+                        weighted_energy_mev = weighted_energy_kev / 1000.0
+                        logger.debug(f"Gamma energy for {isotope}: {weighted_energy_mev:.3f} MeV (avg from {len(energies)} gammas)")
+                        return weighted_energy_mev
+            except (AttributeError, KeyError):
+                # PyNE doesn't have gamma_photon_intensity, try alternative
+                # Use decay gamma data if available
+                try:
+                    # Get ecorr data (gamma energies)
+                    ecorr = pyne_data.ecorr(nuc_id)
+                    if ecorr and ecorr > 0:
+                        # ecorr is average gamma energy per decay in MeV
+                        logger.debug(f"Gamma energy for {isotope}: {ecorr:.3f} MeV (ecorr)")
+                        return ecorr
+                except:
+                    pass
+
+        except Exception as e:
+            logger.debug(f"Could not get gamma energies for {isotope}: {e}")
+
+        return None
+
     def _estimate_dose_rate(self, isotopes):
         """
-        Estimate dose rate at 1 foot using simplified approach
+        Estimate dose rate at 1 foot using isotope-specific gamma energies
 
-        Can use "6 C E rule": dose rate (mrem/hr) ≈ 6 * C * E_avg
-        where C = activity in Ci, E_avg = average gamma energy in MeV
+        Uses "6 C E rule": dose rate (mrem/hr) ≈ 6 × C × E_avg
+        where:
+            C = activity in Curies
+            E_avg = average gamma energy in MeV
+            6 = conversion factor for point source at 1 foot
 
-        For now, use simple scaling based on total activity
+        For isotopes without gamma data, uses fallback scaling factor.
 
         Args:
             isotopes: dict of isotopes with activities
@@ -1262,11 +1421,51 @@ class ActivationCalculator:
         Returns:
             float: estimated dose rate in mrem/hr at 1 foot
         """
-        # Simplified: assume average 0.5 MeV gamma, geometry factor
-        total_ci = sum(iso['activity_ci'] for iso in isotopes.values())
+        print(f"=== DOSE RATE CALCULATION CALLED ===")
+        print(f"Number of isotopes: {len(isotopes)}")
 
-        # Very rough estimate: 1 Ci at 1 foot ≈ 1000-2000 mrem/hr for typical gamma emitters
-        # This should be replaced with isotope-specific dose factors
-        estimated_dose = total_ci * 1000.0  # mrem/hr
+        total_dose_rate = 0.0
+        isotopes_with_gamma = 0
+        isotopes_without_gamma = 0
 
-        return estimated_dose
+        for isotope_name, isotope_data in isotopes.items():
+            activity_ci = isotope_data['activity_ci']
+            print(f"Processing {isotope_name}: activity_ci = {activity_ci}")
+
+            if activity_ci <= 0:
+                continue
+
+            # Get gamma energy for this isotope
+            gamma_energy_mev = self._get_gamma_energies(isotope_name)
+
+            import sys
+            sys.stderr.write(f"DEBUG: {isotope_name} gamma_energy_mev = {gamma_energy_mev}\n")
+            sys.stderr.flush()
+
+            if gamma_energy_mev and gamma_energy_mev > 0:
+                # Use 6 C E rule for gamma emitters
+                dose_contribution = 6.0 * activity_ci * gamma_energy_mev
+                isotopes_with_gamma += 1
+                sys.stderr.write(f"DEBUG: {isotope_name}: 6 × {activity_ci:.2e} Ci × {gamma_energy_mev:.3f} MeV = {dose_contribution:.6f} mrem/hr\n")
+                sys.stderr.flush()
+                logger.debug(f"{isotope_name}: {activity_ci:.2e} Ci × {gamma_energy_mev:.3f} MeV = {dose_contribution:.2f} mrem/hr")
+            else:
+                # Fallback for isotopes without gamma data (beta emitters, or missing data)
+                # Use conservative estimate: 1 Ci ≈ 500 mrem/hr (lower than gamma emitters)
+                dose_contribution = activity_ci * 500.0
+                isotopes_without_gamma += 1
+                logger.debug(f"{isotope_name}: No gamma data, using fallback ({dose_contribution:.2f} mrem/hr)")
+
+            total_dose_rate += dose_contribution
+
+        import sys
+        sys.stdout.flush()
+        sys.stderr.write(f"\n\n*** DOSE RATE CALCULATION COMPLETE ***\n")
+        sys.stderr.write(f"*** Total dose rate: {total_dose_rate:.2f} mrem/hr ***\n")
+        sys.stderr.write(f"*** Isotopes with gamma: {isotopes_with_gamma}, without: {isotopes_without_gamma} ***\n\n")
+        sys.stderr.flush()
+
+        logger.info(f"Dose rate calculation: {isotopes_with_gamma} isotopes with gamma data, "
+                   f"{isotopes_without_gamma} using fallback. Total: {total_dose_rate:.2f} mrem/hr")
+
+        return total_dose_rate
